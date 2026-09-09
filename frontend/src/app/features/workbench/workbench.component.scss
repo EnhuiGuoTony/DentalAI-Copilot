@@ -21,13 +21,83 @@
 }
 
 h1,
-p {
+h2,
+p,
+dl {
   margin: 0;
 }
 
 h1 {
   font-size: 28px;
 }
+
+h2 {
+  font-size: 18px;
+}
+
+.data-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.card {
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.card-heading,
+.import-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-heading p,
+.hint,
+.empty {
+  color: #5d6a7e;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.connection,
+.result {
+  margin-top: 14px;
+  color: #8a5b00;
+}
+
+.connection.ok { color: #157347; }
+
+.table-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.table-counts div,
+.patient {
+  border: 1px solid #e4eaf3;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.table-counts dt { font-size: 12px; color: #5d6a7e; }
+.table-counts dd { margin: 3px 0 0; font-weight: 700; }
+
+.import-controls { margin-top: 16px; justify-content: flex-start; }
+.import-controls label { display: grid; gap: 4px; font-size: 14px; }
+input { width: 100px; border: 1px solid #c5d1e2; border-radius: 6px; padding: 8px; font: inherit; }
+.error, .warning { color: #a23c00; font-size: 13px; margin-top: 8px; }
+.result { display: grid; gap: 4px; color: #172033; font-size: 14px; }
+.patient-list { display: grid; gap: 8px; max-height: 290px; overflow: auto; margin-top: 12px; }
+.patient { display: grid; gap: 3px; background: #f7faff; font-size: 13px; }
+.patient strong { font-size: 15px; }
 
 .chat-panel {
   display: grid;
@@ -108,6 +178,12 @@ button[type="submit"] {
   color: #fff;
 }
 
+button.primary {
+  background: #174ea6;
+  border-color: #174ea6;
+  color: #fff;
+}
+
 button:disabled {
   color: #98a2b3;
   background: #eef1f6;
@@ -123,5 +199,8 @@ button:disabled {
   .topbar {
     display: grid;
   }
+
+  .data-grid { grid-template-columns: 1fr; }
+  .table-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 }

@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.engine import Engine, RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -77,14 +78,15 @@ def deidentify_clinical_text(value: Any) -> str:
     return normalize_text(redacted)
 
 
-def template_content_to_text(value: Any) -> str:
+def template_content_to_text(value: Any, deidentify: bool = False) -> str:
     raw = normalize_text(value)
     if not raw:
         return ""
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return deidentify_clinical_text(html_to_text(raw))
+        text_value = html_to_text(raw)
+        return deidentify_clinical_text(text_value) if deidentify else text_value
 
     parts: list[str] = []
     readable_keys = {"plaintext", "html", "_text", "default", "label", "text", "title", "description", "name"}
@@ -102,7 +104,8 @@ def template_content_to_text(value: Any) -> str:
                 parts.append(text_part)
 
     collect(parsed)
-    return deidentify_clinical_text(" ".join(parts))
+    text_value = normalize_text(" ".join(parts))
+    return deidentify_clinical_text(text_value) if deidentify else text_value
 
 
 def deidentified_patient_name(source_patient_id: int) -> str:
@@ -142,7 +145,6 @@ class DoxMySqlImporter:
             "Treatments",
             "Teeth",
             "PatientPerioFindings",
-            "Attachments",
             "EducationalResources",
         ]
         counts: dict[str, int | None] = {}
@@ -177,14 +179,14 @@ class DoxMySqlImporter:
             summary.patients_requested = len(patient_ids)
 
             if req.include_global_knowledge:
-                summary.knowledge_chunks_imported += self._import_global_knowledge(engine)
+                summary.knowledge_chunks_imported += self._import_global_knowledge(engine, req.deidentify)
 
             if req.include_patient_history:
                 for source_patient_id in patient_ids:
-                    patient = self._upsert_patient(source_patient_id, req.deidentify)
+                    patient = self._upsert_patient(engine, source_patient_id, req.deidentify)
                     summary.patients_imported += 1
-                    summary.notes_imported += self._import_patient_notes(engine, source_patient_id, patient.id)
-                    summary.clinical_facts_imported += self._import_patient_facts(engine, source_patient_id, patient.id)
+                    summary.notes_imported += self._import_patient_notes(engine, source_patient_id, patient.id, req.deidentify)
+                    summary.clinical_facts_imported += self._import_patient_facts(engine, source_patient_id, patient.id, req.deidentify)
 
             summary.status = "completed_with_warnings" if self.warnings else "completed"
         except (SQLAlchemyError, TypeError, ValueError) as exc:
@@ -208,26 +210,67 @@ class DoxMySqlImporter:
         return summary
 
     def _source_engine(self) -> Engine:
-        return create_engine(self.source_url, pool_pre_ping=True)
+        source_url = make_url(self.source_url)
+        if self.settings.dox_mysql_host:
+            source_url = source_url.set(host=self.settings.dox_mysql_host)
+        return create_engine(source_url, pool_pre_ping=True)
 
     def _load_patient_ids(self, engine: Engine, limit: int) -> list[int]:
         safe_limit = max(1, min(limit, 500))
-        rows = self._safe_fetch(engine, "Patients", f"SELECT PatientID FROM `Patients` ORDER BY PatientID LIMIT {safe_limit}")
-        return [int(row["PatientID"]) for row in rows if row.get("PatientID") is not None]
+        # DOX relationship tables (Notes, Treatments, PersonConditions, etc.)
+        # reference Patients.ID.  PatientID is the practice-visible number and
+        # is retained separately in patients.dox_patient_id.
+        rows = self._safe_fetch(engine, "Patients", f"SELECT ID FROM `Patients` ORDER BY ID LIMIT {safe_limit}")
+        return [int(row["ID"]) for row in rows if row.get("ID") is not None]
 
-    def _upsert_patient(self, source_patient_id: int, deidentify: bool) -> Patient:
+    def _upsert_patient(self, engine: Engine, source_patient_id: int, deidentify: bool) -> Patient:
         patient_id = stable_dox_uuid("Patients", source_patient_id)
+        rows = self._safe_fetch(
+            engine,
+            "Patients/People/Locations",
+            """
+            SELECT p.PatientID, p.PatientNumber, p.FileNumber,
+                   pe.FirstName, pe.MiddleName, pe.LastName, pe.DateOfBirth,
+                   l.AddressLine1, l.AddressLine2, l.City, l.StateOrTerritory, l.PostalCode
+            FROM `Patients` p
+            LEFT JOIN `People` pe ON pe.ID = p.ID
+            LEFT JOIN `PersonLocations` pl ON pl.PersonID = pe.ID
+            LEFT JOIN `Locations` l ON l.ID = pl.LocationID
+            WHERE p.ID = :patient_id
+            ORDER BY pl.IsDefault DESC, pl.Sequence ASC
+            LIMIT 1
+            """,
+            {"patient_id": source_patient_id},
+        )
+        source = rows[0] if rows else {}
+        name = " ".join(
+            part for part in (normalize_text(source.get("FirstName")), normalize_text(source.get("MiddleName")), normalize_text(source.get("LastName"))) if part
+        ) or deidentified_patient_name(source_patient_id)
+        address = ", ".join(
+            part for part in (
+                normalize_text(source.get("AddressLine1")), normalize_text(source.get("AddressLine2")),
+                normalize_text(source.get("City")), normalize_text(source.get("StateOrTerritory")), normalize_text(source.get("PostalCode")),
+            ) if part
+        ) or None
         patient = self.target_db.get(Patient, patient_id)
         if patient is None:
-            patient = Patient(id=patient_id, name=deidentified_patient_name(source_patient_id), date_of_birth=None)
-        elif deidentify:
+            patient = Patient(id=patient_id)
+        if deidentify:
             patient.name = deidentified_patient_name(source_patient_id)
             patient.date_of_birth = None
+            patient.address = None
+        else:
+            patient.name = name
+            patient.date_of_birth = source.get("DateOfBirth")
+            patient.address = address
+        patient.dox_patient_id = str(source.get("PatientID") or source_patient_id)
+        patient.patient_number = normalize_text(source.get("PatientNumber")) or None
+        patient.medical_record_number = normalize_text(source.get("FileNumber")) or None
         self.target_db.merge(patient)
         self.target_db.commit()
         return self.target_db.get(Patient, patient_id) or patient
 
-    def _import_patient_notes(self, engine: Engine, source_patient_id: int, patient_id: uuid.UUID) -> int:
+    def _import_patient_notes(self, engine: Engine, source_patient_id: int, patient_id: uuid.UUID, deidentify: bool) -> int:
         rows = self._safe_fetch(
             engine,
             "Notes",
@@ -242,7 +285,8 @@ class DoxMySqlImporter:
         imported = 0
         for row in rows:
             text_value = html_to_text(row.get("Content")) if row.get("IsHTML") else normalize_text(row.get("Content"))
-            text_value = deidentify_clinical_text(text_value)
+            if deidentify:
+                text_value = deidentify_clinical_text(text_value)
             if not text_value:
                 continue
             note_id = stable_dox_uuid("Notes", row["ID"])
@@ -263,19 +307,19 @@ class DoxMySqlImporter:
                     "source_table": "Notes",
                     "source_pk": str(row["ID"]),
                     "source_patient_ref": str(stable_dox_uuid("SourcePatientRef", source_patient_id)),
-                    "name": normalize_text(row.get("Name")),
-                    "description": normalize_text(row.get("Description")),
+                    "name": deidentify_clinical_text(row.get("Name")) if deidentify else normalize_text(row.get("Name")),
+                    "description": deidentify_clinical_text(row.get("Description")) if deidentify else normalize_text(row.get("Description")),
                     "appointment_id": row.get("AppointmentID"),
                     "kind_of_note": row.get("KindOfNote"),
                     "type_id": row.get("TypeID"),
-                    "deidentified": True,
+                    "deidentified": deidentify,
                 },
             )
             imported += 1
         self.target_db.commit()
         return imported
 
-    def _import_global_knowledge(self, engine: Engine) -> int:
+    def _import_global_knowledge(self, engine: Engine, deidentify: bool) -> int:
         imported = 0
         imported += self._import_knowledge_query(
             engine,
@@ -288,6 +332,7 @@ class DoxMySqlImporter:
             """,
             "dox_clinical_decision",
             ["Name", "Description", "SnomedConceptDescription", "ReferenceLink"],
+            deidentify=deidentify,
         )
         imported += self._import_knowledge_query(
             engine,
@@ -298,6 +343,7 @@ class DoxMySqlImporter:
             """,
             "dox_diagnosis",
             ["Name", "Description", "ICD10Code", "ICD10Name", "SnomedCode", "SnomedName"],
+            deidentify=deidentify,
         )
         imported += self._import_knowledge_query(
             engine,
@@ -309,6 +355,7 @@ class DoxMySqlImporter:
             """,
             "dox_medical_condition",
             ["Name", "Description", "AllergyRxNormID", "ODM_TCode"],
+            deidentify=deidentify,
         )
         imported += self._import_knowledge_query(
             engine,
@@ -322,6 +369,7 @@ class DoxMySqlImporter:
             "dox_template_content",
             ["Content"],
             html_fields=["Content"],
+            deidentify=deidentify,
         )
         imported += self._import_knowledge_query(
             engine,
@@ -333,6 +381,7 @@ class DoxMySqlImporter:
             """,
             "dox_educational_resource",
             ["Name", "Description", "URL", "SnomedConceptDescription"],
+            deidentify=deidentify,
         )
         self.target_db.commit()
         return imported
@@ -345,6 +394,7 @@ class DoxMySqlImporter:
         source_type: str,
         text_fields: list[str],
         html_fields: list[str] | None = None,
+        deidentify: bool = False,
     ) -> int:
         rows = self._safe_fetch(engine, table_name, sql)
         imported = 0
@@ -354,10 +404,11 @@ class DoxMySqlImporter:
             parts = []
             for field in text_fields:
                 if table_name == "TemplateContents" and field == "Content":
-                    value = template_content_to_text(row.get(field))
+                    value = template_content_to_text(row.get(field), deidentify=deidentify)
                 else:
                     value = html_to_text(row.get(field)) if field in html_field_set else normalize_text(row.get(field))
-                value = deidentify_clinical_text(value)
+                if deidentify and not (table_name == "TemplateContents" and field == "Content"):
+                    value = deidentify_clinical_text(value)
                 if value:
                     parts.append(f"{field}: {value}")
             text_value = "\n".join(parts)
@@ -384,7 +435,7 @@ class DoxMySqlImporter:
                 imported += 1
         return imported
 
-    def _import_patient_facts(self, engine: Engine, source_patient_id: int, patient_id: uuid.UUID) -> int:
+    def _import_patient_facts(self, engine: Engine, source_patient_id: int, patient_id: uuid.UUID, deidentify: bool) -> int:
         imported = 0
         imported += self._import_fact_query(
             engine,
@@ -403,7 +454,7 @@ class DoxMySqlImporter:
             "condition",
             "Condition",
             ["MedicalConditionName", "DiagnosisName", "Description", "ICD10Code", "SnomedCode"],
-            "DiagnosisDate",
+            "DiagnosisDate", deidentify,
         )
         imported += self._import_fact_query(
             engine,
@@ -420,7 +471,7 @@ class DoxMySqlImporter:
             "treatment",
             "Treatment",
             ["ProcedureCode", "ProcedureName", "ProcedureDescription", "ToothID", "Surfaces", "Status"],
-            "TreatmentDate",
+            "TreatmentDate", deidentify,
         )
         imported += self._import_fact_query(
             engine,
@@ -437,23 +488,7 @@ class DoxMySqlImporter:
             "perio_finding",
             "Perio",
             ["Location", "BleedingSites", "PlaqueSites", "CalculusSites", "InfectionSites", "Pocket_DB", "Pocket_B", "Pocket_MB", "Pocket_DL", "Pocket_L", "Pocket_ML"],
-            None,
-        )
-        imported += self._import_fact_query(
-            engine,
-            "Attachments",
-            """
-            SELECT ID, Name, Description, FileName, MimeType, IsClinicalDocument, PatientID, PatientExamID,
-                   NoteID, AttachmentPath, FileCreateDate, FileModifiedDate
-            FROM `Attachments`
-            WHERE PatientID = :patient_id
-            """,
-            {"patient_id": source_patient_id},
-            patient_id,
-            "attachment_metadata",
-            "Attachment",
-            ["Name", "Description", "FileName", "MimeType", "IsClinicalDocument"],
-            "FileCreateDate",
+            None, deidentify,
         )
         self.target_db.commit()
         return imported
@@ -469,6 +504,7 @@ class DoxMySqlImporter:
         label_prefix: str,
         summary_fields: list[str],
         effective_field: str | None,
+        deidentify: bool,
     ) -> int:
         rows = self._safe_fetch(engine, table_name, sql, params)
         imported = 0
@@ -478,6 +514,8 @@ class DoxMySqlImporter:
                 continue
             summary_parts = [normalize_text(row.get(field)) for field in summary_fields]
             summary = "; ".join(part for part in summary_parts if part)
+            if deidentify:
+                summary = deidentify_clinical_text(summary)
             if not summary:
                 summary = f"{label_prefix} imported from DOX {table_name} #{source_pk}"
             fact = ClinicalFact(
@@ -489,7 +527,7 @@ class DoxMySqlImporter:
                 source_pk=str(source_pk),
                 label=f"{label_prefix} #{source_pk}",
                 summary=summary,
-                data=self._jsonable(row),
+                data=self._deidentify_data(self._jsonable(row)) if deidentify else self._jsonable(row),
                 effective_at=row.get(effective_field) if effective_field else None,
             )
             self.target_db.merge(fact)
@@ -516,6 +554,14 @@ class DoxMySqlImporter:
                     embedding=self.embedding_service.embed(chunk),
                 )
             )
+
+    @staticmethod
+    def _deidentify_data(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: DoxMySqlImporter._deidentify_data(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [DoxMySqlImporter._deidentify_data(item) for item in value]
+        return deidentify_clinical_text(value) if isinstance(value, str) else value
 
     def _safe_fetch(
         self,

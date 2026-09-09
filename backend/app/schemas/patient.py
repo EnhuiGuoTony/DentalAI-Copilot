@@ -13,6 +13,10 @@ class PatientRead(BaseModel):
     id: UUID
     name: str
     date_of_birth: date | None
+    dox_patient_id: str | None = None
+    patient_number: str | None = None
+    medical_record_number: str | None = None
+    address: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -40,4 +44,3 @@ class TimelineItem(BaseModel):
     title: str
     content: str
     created_at: datetime
-

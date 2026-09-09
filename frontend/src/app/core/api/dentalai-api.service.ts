@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { AgentRunResponse, ChatConnectionResponse, ChatMessage, ChatResponse, ClinicalCase, Patient, TimelineItem, XrayFinding, XrayImage } from '../models/api.models';
+import { AgentRunResponse, ChatConnectionResponse, ChatMessage, ChatResponse, ClinicalCase, DoxImportRequest, DoxImportSummary, DoxPreviewResponse, Patient, TimelineItem, XrayFinding, XrayImage } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class DentalAiApiService {
@@ -45,5 +45,13 @@ export class DentalAiApiService {
 
   connectChat(): Observable<ChatConnectionResponse> {
     return this.http.post<ChatConnectionResponse>(`${this.baseUrl}/chat/connect`, {});
+  }
+
+  previewDox(): Observable<DoxPreviewResponse> {
+    return this.http.get<DoxPreviewResponse>(`${this.baseUrl}/dox-import/preview`);
+  }
+
+  importDox(request: DoxImportRequest): Observable<DoxImportSummary> {
+    return this.http.post<DoxImportSummary>(`${this.baseUrl}/dox-import/run`, request);
   }
 }

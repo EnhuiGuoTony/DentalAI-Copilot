@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     app_name: str = "DentalAI Copilot"
     database_url: str = "postgresql+psycopg://dentalai:dentalai@localhost:5438/dentalai"
     dox_mysql_url: str = ""
+    # Set this when the API runs on the host while DOX MySQL is local. It
+    # deliberately overrides only the host portion of DOX_MYSQL_URL.
+    dox_mysql_host: str = ""
     dox_import_patient_limit: int = 10
     dox_import_batch_size: int = 200
     upload_dir: str = "uploads"

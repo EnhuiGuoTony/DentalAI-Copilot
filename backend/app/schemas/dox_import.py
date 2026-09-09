@@ -8,7 +8,7 @@ class DoxImportRequest(BaseModel):
     patient_limit: int | None = Field(default=None, ge=1, le=500)
     include_global_knowledge: bool = True
     include_patient_history: bool = True
-    deidentify: bool = True
+    deidentify: bool = False
 
 
 class DoxImportSummary(BaseModel):

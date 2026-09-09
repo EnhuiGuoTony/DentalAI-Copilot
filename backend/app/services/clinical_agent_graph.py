@@ -9,6 +9,7 @@ from app.db.models import ClinicalCase, ClinicalFact, XrayFinding
 from app.schemas.agent import AgentOutput, SuspectedFinding, ToolTraceItem
 from app.schemas.rag import EvidenceItem
 from app.services.llm_service import ClinicalDraftInput, LlmService
+from app.services.llm_privacy_service import LlmPrivacyService
 from app.services.rag_service import RagService
 
 
@@ -110,13 +111,14 @@ class ClinicalAgentGraph:
 
     def _generate_clinical_draft(self, state: ClinicalAgentState) -> dict[str, Any]:
         if self.llm.enabled:
+            payload = ClinicalDraftInput(
+                question=state["question"],
+                xray_findings=[self._finding_to_payload(item) for item in state.get("findings", [])],
+                evidence=[item.model_dump() for item in state.get("evidence", [])],
+                structured_facts=[self._fact_to_payload(item) for item in state.get("structured_facts", [])],
+            )
             output = self.llm.generate_clinical_draft(
-                ClinicalDraftInput(
-                    question=state["question"],
-                    xray_findings=[self._finding_to_payload(item) for item in state.get("findings", [])],
-                    evidence=[item.model_dump() for item in state.get("evidence", [])],
-                    structured_facts=[self._fact_to_payload(item) for item in state.get("structured_facts", [])],
-                )
+                ClinicalDraftInput.model_validate(LlmPrivacyService(self.db).redact(payload.model_dump()))
             )
             mode = "LangChain ChatOpenAI structured output"
         else:

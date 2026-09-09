@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.chat import ChatConnectionResponse, ChatRequest, ChatResponse
 from app.services.llm_service import LlmService
+from app.services.llm_privacy_service import LlmPrivacyService
 from app.services.patient_context_service import PatientContextService
 
 router = APIRouter(tags=["chat"])
@@ -30,7 +31,11 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     if not llm.enabled or context_service.requires_deterministic_answer(request.message):
         reply = context_service.mock_answer(context)
     else:
-        reply = llm.chat(request.message, request.history, patient_context=context)
+        privacy = LlmPrivacyService(db)
+        safe_context = privacy.redact(context)
+        safe_message = privacy.redact(request.message)
+        safe_history = [item.model_copy(update={"content": privacy.redact(item.content)}) for item in request.history]
+        reply = llm.chat(safe_message, safe_history, patient_context=safe_context)
         if context_service.is_unhelpful_model_reply(reply):
             reply = context_service.mock_answer(context)
     return ChatResponse(

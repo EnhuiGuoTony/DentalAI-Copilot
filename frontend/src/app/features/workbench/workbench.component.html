@@ -6,6 +6,69 @@
     </button>
   </header>
 
+  <section class="data-grid" aria-label="DOX 导入与患者信息">
+    <article class="card import-card">
+      <div class="card-heading">
+        <div>
+          <h2>DOX 数据导入</h2>
+          <p>先预览源库，再导入患者文本病历与临床数据。</p>
+        </div>
+        <button type="button" (click)="previewDox()" [disabled]="previewLoading() || importLoading()">
+          {{ previewLoading() ? '正在预览…' : '预览 DOX' }}
+        </button>
+      </div>
+
+      <ng-container *ngIf="doxPreview() as preview">
+        <p class="connection" [class.ok]="preview.connected">
+          {{ preview.connected ? 'DOX 数据源已连接' : 'DOX 数据源未连接' }}
+        </p>
+        <dl class="table-counts" *ngIf="preview.connected">
+          <div *ngFor="let table of preview.tables | keyvalue">
+            <dt>{{ table.key }}</dt><dd>{{ table.value ?? '不可用' }}</dd>
+          </div>
+        </dl>
+        <p class="warning" *ngFor="let warning of preview.warnings">{{ warning }}</p>
+      </ng-container>
+
+      <div class="import-controls">
+        <label>
+          导入患者数
+          <input type="number" min="1" max="500" [ngModel]="importPatientLimit()" (ngModelChange)="importPatientLimit.set($event)" />
+        </label>
+        <button type="button" class="primary" (click)="importDox()" [disabled]="importLoading()">
+          {{ importLoading() ? '正在导入…' : '开始导入' }}
+        </button>
+      </div>
+      <p class="hint">导入保留原始文本；仅发送给大模型时隐藏姓名、出生日期和地址。</p>
+      <p class="error" *ngIf="importError()">{{ importError() }}</p>
+      <div class="result" *ngIf="importResult() as result">
+        <strong>导入{{ result.status }}</strong>
+        <span>患者 {{ result.patients_imported }}/{{ result.patients_requested }} · 笔记 {{ result.notes_imported }} · 临床事实 {{ result.clinical_facts_imported }}</span>
+        <p class="warning" *ngFor="let warning of result.warnings">{{ warning }}</p>
+      </div>
+    </article>
+
+    <article class="card patients-card">
+      <div class="card-heading">
+        <div><h2>已导入患者</h2><p>{{ patients().length }} 位</p></div>
+        <button type="button" (click)="loadPatients()" [disabled]="patientsLoading()">
+          {{ patientsLoading() ? '刷新中…' : '刷新' }}
+        </button>
+      </div>
+      <p class="error" *ngIf="patientsError()">{{ patientsError() }}</p>
+      <div class="patient-list" *ngIf="patients().length; else noPatients">
+        <article class="patient" *ngFor="let patient of patients()">
+          <strong>{{ patient.name }}</strong>
+          <span>年龄：{{ age(patient) }}</span>
+          <span>DOX ID：{{ patient.dox_patient_id ?? '—' }}</span>
+          <span>患者编号：{{ patient.patient_number ?? '—' }}</span>
+          <span>病历号：{{ patient.medical_record_number ?? '—' }}</span>
+        </article>
+      </div>
+      <ng-template #noPatients><p class="empty">尚未导入患者数据。</p></ng-template>
+    </article>
+  </section>
+
   <section class="chat-panel">
     <div class="messages">
       <article *ngFor="let message of messages()" [class.user]="message.role === 'user'">
