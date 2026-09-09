@@ -17,7 +17,7 @@ export class WorkbenchComponent {
   private readonly maxMessageChars = 4000;
   private conversationHistory: ChatMessage[] = [];
 
-  // Prompts are retained only in this small context window; only AI replies render.
+  // The visible transcript keeps every turn; only this smaller array is sent back.
   readonly messages = signal<ChatMessage[]>([]);
   readonly input = signal('Explain this project in one minute for an AI Engineer interview.');
   readonly connectionLabel = signal('Connect model');
@@ -52,6 +52,7 @@ export class WorkbenchComponent {
       role: 'user',
       content: message.slice(0, this.maxMessageChars)
     };
+    this.messages.set([...this.messages(), userTurn]);
     this.input.set('');
     this.loading.set(true);
 
@@ -66,7 +67,7 @@ export class WorkbenchComponent {
         },
         error: () => {
           this.connected.set(false);
-          this.connectionLabel.set('Request failed — reconnect');
+          this.connectionLabel.set('Request failed - reconnect');
         }
       });
   }

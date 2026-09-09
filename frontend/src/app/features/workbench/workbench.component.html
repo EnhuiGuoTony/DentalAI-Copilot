@@ -8,7 +8,7 @@
 
   <section class="chat-panel">
     <div class="messages">
-      <article *ngFor="let message of messages()">
+      <article *ngFor="let message of messages()" [class.user]="message.role === 'user'">
         <p>{{ message.content }}</p>
       </article>
     </div>
