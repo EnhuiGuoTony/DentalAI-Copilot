@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dentalai-postgres
+    environment:
+      POSTGRES_DB: dentalai
+      POSTGRES_USER: dentalai
+      POSTGRES_PASSWORD: dentalai
+    ports:
+      - "5438:5432"
+    volumes:
+      - dentalai_pg:/var/lib/postgresql/data
+      - ./backend/db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dentalai -d dentalai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # api:
+  #   build:
+  #     context: ./backend
+  #   container_name: dentalai-api
+  #   environment:
+  #     DATABASE_URL: postgresql+psycopg://dentalai:dentalai@postgres:5432/dentalai
+  #     DOX_MYSQL_URL: ${DOX_MYSQL_URL:-}
+  #     DOX_IMPORT_PATIENT_LIMIT: ${DOX_IMPORT_PATIENT_LIMIT:-10}
+  #     DOX_IMPORT_BATCH_SIZE: ${DOX_IMPORT_BATCH_SIZE:-200}
+  #     UPLOAD_DIR: uploads
+  #     LLM_PROVIDER: ${LLM_PROVIDER:-google}
+  #     LLM_API_KEY: ${LLM_API_KEY:-}
+  #     LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+  #     LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+  #     GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  #     GOOGLE_MODEL: ${GOOGLE_MODEL:-gemini-3.8-flash}
+  #     MOCK_LLM: ${MOCK_LLM:-true}
+  #     MOCK_VISION: ${MOCK_VISION:-true}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./backend/uploads:/app/uploads
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+  # web:
+  #   build:
+  #     context: ./frontend
+  #   container_name: dentalai-web
+  #   ports:
+  #     - "4200:80"
+  #   depends_on:
+  #     - api
+
+volumes:
+  dentalai_pg:

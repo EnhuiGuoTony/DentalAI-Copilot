@@ -1,0 +1,35 @@
+<main class="shell">
+  <header class="topbar">
+    <div>
+      <h1>DentalAI Copilot实打实</h1>
+      <p>LLM chat first. RAG and LangGraph can be added back after this base loop is stable.</p>
+    </div>
+    <div class="runtime">
+      <span>{{ provider() }}</span>
+      <strong>{{ status() }}</strong>
+    </div>
+  </header>
+
+  <section class="chat-panel">
+    <div class="messages">
+      <article *ngFor="let message of messages()" [class.user]="message.role === 'user'" [class.assistant]="message.role === 'assistant'">
+        <span>{{ message.role }}</span>
+        <p>{{ message.content }}</p>
+      </article>
+    </div>
+
+    <form class="composer" (ngSubmit)="send()">
+      <textarea
+        [ngModel]="input()"
+        (ngModelChange)="input.set($event)"
+        name="message"
+        placeholder="Send a message to the LLM"
+        [disabled]="loading()"
+      ></textarea>
+      <div class="actions">
+        <button type="button" (click)="clear()" [disabled]="loading()">Clear</button>
+        <button type="submit" [disabled]="loading() || !input().trim()">Send</button>
+      </div>
+    </form>
+  </section>
+</main>

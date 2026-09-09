@@ -1,0 +1,17 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+pydantic==2.12.5
+pydantic-settings==2.7.0
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+PyMySQL==1.1.1
+pgvector==0.3.6
+numpy==2.0.2
+opencv-python==4.10.0.84
+httpx==0.28.1
+langchain==1.4.0
+langchain-google-genai==4.4.0
+langchain-openai==1.6.0
+langgraph==1.2.11
+pytest==8.3.4
