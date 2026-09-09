@@ -13,52 +13,66 @@ import { ChatMessage } from '../../core/models/api.models';
   styleUrl: './workbench.component.scss'
 })
 export class WorkbenchComponent {
-  readonly messages = signal<ChatMessage[]>([
-    {
-      role: 'assistant',
-      content: 'I am ready. Send a message to test the LLM integration.'
-    }
-  ]);
+  private readonly maxHistoryMessages = 6;
+  private readonly maxMessageChars = 4000;
+  private conversationHistory: ChatMessage[] = [];
+
+  // Prompts are retained only in this small context window; only AI replies render.
+  readonly messages = signal<ChatMessage[]>([]);
   readonly input = signal('Explain this project in one minute for an AI Engineer interview.');
-  readonly status = signal('Ready');
-  readonly provider = signal('not connected');
+  readonly connectionLabel = signal('Connect model');
+  readonly connected = signal(false);
+  readonly connecting = signal(false);
   readonly loading = signal(false);
 
   constructor(private readonly api: DentalAiApiService) {}
 
+  connect(): void {
+    if (this.connecting() || this.connected()) return;
+
+    this.connecting.set(true);
+    this.connectionLabel.set('Connecting...');
+    this.api.connectChat()
+      .pipe(finalize(() => this.connecting.set(false)))
+      .subscribe({
+        next: response => {
+          this.connected.set(response.connected);
+          this.connectionLabel.set(response.connected ? 'Model connected' : 'Connection unavailable');
+        },
+        error: () => this.connectionLabel.set('Connection unavailable')
+      });
+  }
+
   send(): void {
     const message = this.input().trim();
-    if (!message || this.loading()) return;
+    if (!message || this.loading() || !this.connected()) return;
 
-    const history = this.messages();
-    this.messages.set([...history, { role: 'user', content: message }]);
+    const history = this.conversationHistory.slice(-this.maxHistoryMessages);
+    const userTurn: ChatMessage = {
+      role: 'user',
+      content: message.slice(0, this.maxMessageChars)
+    };
     this.input.set('');
     this.loading.set(true);
-    this.status.set('Waiting for LLM...');
 
-    this.api.chat(message, history)
+    this.api.chat(userTurn.content, history)
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: response => {
-          this.provider.set(`${response.provider}${response.mock ? ' (mock)' : ''}`);
-          this.messages.set([...this.messages(), { role: 'assistant', content: response.reply }]);
-          this.status.set('Response received');
+          const assistantTurn: ChatMessage = { role: 'assistant', content: response.reply };
+          this.conversationHistory = [...this.conversationHistory, userTurn, assistantTurn]
+            .slice(-this.maxHistoryMessages);
+          this.messages.set([...this.messages(), assistantTurn]);
         },
-        error: error => {
-          this.messages.set([
-            ...this.messages(),
-            {
-              role: 'assistant',
-              content: `Request failed: ${error?.error?.detail ?? error.message ?? 'Unknown error'}`
-            }
-          ]);
-          this.status.set('Request failed');
+        error: () => {
+          this.connected.set(false);
+          this.connectionLabel.set('Request failed — reconnect');
         }
       });
   }
 
   clear(): void {
     this.messages.set([]);
-    this.status.set('Ready');
+    this.conversationHistory = [];
   }
 }

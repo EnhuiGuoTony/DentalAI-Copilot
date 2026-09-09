@@ -1,19 +1,14 @@
 <main class="shell">
   <header class="topbar">
-    <div>
-      <h1>DentalAI Copilot实打实</h1>
-      <p>LLM chat first. RAG and LangGraph can be added back after this base loop is stable.</p>
-    </div>
-    <div class="runtime">
-      <span>{{ provider() }}</span>
-      <strong>{{ status() }}</strong>
-    </div>
+    <h1>DentalAI Copilot</h1>
+    <button type="button" (click)="connect()" [disabled]="connecting() || connected()">
+      {{ connectionLabel() }}
+    </button>
   </header>
 
   <section class="chat-panel">
     <div class="messages">
-      <article *ngFor="let message of messages()" [class.user]="message.role === 'user'" [class.assistant]="message.role === 'assistant'">
-        <span>{{ message.role }}</span>
+      <article *ngFor="let message of messages()">
         <p>{{ message.content }}</p>
       </article>
     </div>
@@ -23,12 +18,12 @@
         [ngModel]="input()"
         (ngModelChange)="input.set($event)"
         name="message"
-        placeholder="Send a message to the LLM"
-        [disabled]="loading()"
+        placeholder="Connect the model to start chatting"
+        [disabled]="loading() || !connected()"
       ></textarea>
       <div class="actions">
         <button type="button" (click)="clear()" [disabled]="loading()">Clear</button>
-        <button type="submit" [disabled]="loading() || !input().trim()">Send</button>
+        <button type="submit" [disabled]="loading() || !connected() || !input().trim()">Send</button>
       </div>
     </form>
   </section>

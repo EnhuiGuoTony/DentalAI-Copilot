@@ -76,7 +76,7 @@ export interface AgentRunResponse {
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'user' | 'assistant';
   content: string;
 }
 
@@ -84,4 +84,11 @@ export interface ChatResponse {
   reply: string;
   provider: string;
   mock: boolean;
+}
+
+export interface ChatConnectionResponse {
+  connected: boolean;
+  provider: string;
+  mock: boolean;
+  detail: string;
 }

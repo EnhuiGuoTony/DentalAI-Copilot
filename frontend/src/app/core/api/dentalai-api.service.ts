@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { AgentRunResponse, ChatMessage, ChatResponse, ClinicalCase, Patient, TimelineItem, XrayFinding, XrayImage } from '../models/api.models';
+import { AgentRunResponse, ChatConnectionResponse, ChatMessage, ChatResponse, ClinicalCase, Patient, TimelineItem, XrayFinding, XrayImage } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class DentalAiApiService {
@@ -41,5 +41,9 @@ export class DentalAiApiService {
 
   chat(message: string, history: ChatMessage[]): Observable<ChatResponse> {
     return this.http.post<ChatResponse>(`${this.baseUrl}/chat`, { message, history });
+  }
+
+  connectChat(): Observable<ChatConnectionResponse> {
+    return this.http.post<ChatConnectionResponse>(`${this.baseUrl}/chat/connect`, {});
   }
 }

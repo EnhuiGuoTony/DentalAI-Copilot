@@ -51,11 +51,23 @@ class LlmService:
             return AgentOutput.model_validate(result)
         return result
 
+    def connect(self) -> tuple[bool, str]:
+        """Prepare provider configuration without a model invocation or token use."""
+        if self.settings.mock_llm:
+            return True, "Mock LLM is ready."
+        if not self._api_key():
+            return False, "No API key is configured for the selected provider."
+        try:
+            self._chat_model()
+        except (TypeError, ValueError) as error:
+            return False, str(error)
+        return True, "Model configuration is ready."
+
     def chat(self, message: str, history: list[ChatMessage] | None = None) -> str:
         if not self.enabled:
             return (
-                "Mock response: Gemini/OpenAI is not enabled yet. Set MOCK_LLM=false "
-                "and configure GOOGLE_API_KEY to receive real model responses."
+                "Mock response: OpenRouter is not enabled yet. Set MOCK_LLM=false "
+                "and configure OPENROUTER_API_KEY to receive real model responses."
             )
 
         messages = [
@@ -67,13 +79,13 @@ class LlmService:
                 )
             )
         ]
+        # The API schema only permits prior user/assistant turns. The server
+        # owns the system prompt, preventing irrelevant client context.
         for item in history or []:
             if item.role == "user":
                 messages.append(HumanMessage(content=item.content))
             elif item.role == "assistant":
                 messages.append(AIMessage(content=item.content))
-            elif item.role == "system":
-                messages.append(SystemMessage(content=item.content))
 
         messages.append(HumanMessage(content=message))
         result = self._chat_model().invoke(messages)
@@ -83,11 +95,16 @@ class LlmService:
         provider = self.settings.llm_provider.lower()
         if provider == "google":
             return f"google:{self.settings.google_model}"
+        if provider == "openrouter":
+            return f"openrouter:{self.settings.llm_model}"
         return f"openai:{self.settings.llm_model}"
 
     def _api_key(self) -> str:
-        if self.settings.llm_provider.lower() == "google":
+        provider = self.settings.llm_provider.lower()
+        if provider == "google":
             return self.settings.google_api_key or self.settings.llm_api_key
+        if provider == "openrouter":
+            return self.settings.openrouter_api_key or self.settings.llm_api_key
         return self.settings.llm_api_key
 
     def _chat_model(self):
@@ -98,7 +115,7 @@ class LlmService:
                 api_key=self._api_key(),
                 temperature=0.2,
             )
-        if provider == "openai":
+        if provider in {"openai", "openrouter"}:
             return ChatOpenAI(
                 model=self.settings.llm_model,
                 api_key=self._api_key(),

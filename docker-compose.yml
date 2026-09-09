@@ -27,10 +27,11 @@ services:
   #     DOX_IMPORT_PATIENT_LIMIT: ${DOX_IMPORT_PATIENT_LIMIT:-10}
   #     DOX_IMPORT_BATCH_SIZE: ${DOX_IMPORT_BATCH_SIZE:-200}
   #     UPLOAD_DIR: uploads
-  #     LLM_PROVIDER: ${LLM_PROVIDER:-google}
+  #     LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
   #     LLM_API_KEY: ${LLM_API_KEY:-}
-  #     LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
-  #     LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+  #     LLM_BASE_URL: ${LLM_BASE_URL:-https://openrouter.ai/api/v1}
+  #     LLM_MODEL: ${LLM_MODEL:-openrouter/free}
+  #     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   #     GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
   #     GOOGLE_MODEL: ${GOOGLE_MODEL:-gemini-3.8-flash}
   #     MOCK_LLM: ${MOCK_LLM:-true}
