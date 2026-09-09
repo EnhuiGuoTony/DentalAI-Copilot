@@ -47,6 +47,19 @@ class VectorStore:
         rows = self.db.execute(stmt).all()
         return [(row[0], max(0.0, 1.0 - float(row[1]))) for row in rows]
 
+    def search_all_patients(self, query: str, top_k: int = 8) -> list[tuple[EmbeddingChunk, float]]:
+        """Return chart-note evidence across the accessible patient corpus.
+
+        This is deliberately separate from ``search``: case RAG remains strictly
+        patient-scoped, while the general chart assistant needs a corpus-wide view.
+        Authorization must be applied before exposing this endpoint in production.
+        """
+        query_embedding = self.embeddings.embed(query)
+        distance = EmbeddingChunk.embedding.cosine_distance(query_embedding)
+        stmt = select(EmbeddingChunk, distance.label("distance")).order_by(distance).limit(top_k)
+        rows = self.db.execute(stmt).all()
+        return [(row[0], max(0.0, 1.0 - float(row[1]))) for row in rows]
+
     def search_knowledge(self, query: str, top_k: int = 5) -> list[tuple[KnowledgeChunk, float]]:
         query_embedding = self.embeddings.embed(query)
         distance = KnowledgeChunk.embedding.cosine_distance(query_embedding)

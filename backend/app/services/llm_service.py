@@ -64,7 +64,7 @@ class LlmService:
             return False, str(error)
         return True, "Model configuration is ready."
 
-    def chat(self, message: str, history: list[ChatMessage] | None = None) -> str:
+    def chat(self, message: str, history: list[ChatMessage] | None = None, patient_context: dict | None = None) -> str:
         if not self.enabled:
             return (
                 "Mock response: OpenRouter is not enabled yet. Set MOCK_LLM=false "
@@ -80,7 +80,11 @@ class LlmService:
                     "Never identify yourself as Nex, Nex-AGI, OpenRouter, a language model, or any "
                     "other provider or agent. If asked who you are, say only that you are DentalAI Copilot, "
                     "a dental clinical support agent. Answer in the user's language. Do not present any "
-                    "medical information as a final diagnosis; recommend clinician review where appropriate."
+                    "medical information as a final diagnosis; recommend clinician review where appropriate. "
+                    "Reply in the same language as the user's latest message. "
+                    " When CHART CONTEXT is supplied, use it as the authoritative source for patient counts, "
+                    "names, chart facts, and notes. Answer the user's question in detail from that context; "
+                    "never invent patient data. Say clearly when the context has no matching information."
                 )
             )
         ]
@@ -92,7 +96,10 @@ class LlmService:
             elif item.role == "assistant":
                 messages.append(AIMessage(content=item.content))
 
-        messages.append(HumanMessage(content=message))
+        context_suffix = ""
+        if patient_context is not None:
+            context_suffix = f"\n\nCHART CONTEXT (read-only database result):\n{json.dumps(patient_context, default=str)}"
+        messages.append(HumanMessage(content=message + context_suffix))
         result = self._chat_model().invoke(messages)
         return str(result.content)
 
