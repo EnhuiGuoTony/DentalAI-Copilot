@@ -6,6 +6,7 @@ from app.schemas.chat import ChatConnectionResponse, ChatRequest, ChatResponse
 from app.services.llm_service import LlmService
 from app.services.llm_privacy_service import LlmPrivacyService
 from app.services.patient_context_service import PatientContextService
+from app.services.pms_agent_service import PmsAgentService
 
 router = APIRouter(tags=["chat"])
 
@@ -25,6 +26,10 @@ def connect_chat() -> ChatConnectionResponse:
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+    pms_agent = PmsAgentService(db)
+    if request.patient_ids or pms_agent.matches_question(request.message):
+        reply, trace = pms_agent.run(request.message, request.patient_ids)
+        return ChatResponse(reply=reply, provider="langchain:pms-agent", mock=not LlmService().enabled, tool_trace=trace)
     llm = LlmService()
     context_service = PatientContextService(db)
     context = context_service.build(request.message)

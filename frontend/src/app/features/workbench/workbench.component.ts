@@ -33,6 +33,7 @@ export class WorkbenchComponent implements OnInit {
   readonly importResult = signal<DoxImportSummary | null>(null);
   readonly importError = signal('');
   readonly importPatientLimit = signal(10);
+  readonly selectedPatientIds = signal<string[]>([]);
 
   constructor(private readonly api: DentalAiApiService) {}
 
@@ -128,7 +129,7 @@ export class WorkbenchComponent implements OnInit {
     this.input.set('');
     this.loading.set(true);
 
-    this.api.chat(userTurn.content, history)
+    this.api.chat(userTurn.content, history, this.selectedPatientIds())
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: response => {
@@ -142,6 +143,16 @@ export class WorkbenchComponent implements OnInit {
           this.connectionLabel.set('Request failed - reconnect');
         }
       });
+  }
+
+  togglePatient(patientId: string, checked: boolean): void {
+    this.selectedPatientIds.update(ids => checked ? [...new Set([...ids, patientId])] : ids.filter(id => id !== patientId));
+  }
+
+  summarizeSelected(): void {
+    if (!this.selectedPatientIds().length) return;
+    this.input.set('请总结所选患者的病历、治疗史、诊断和最近笔记。');
+    this.send();
   }
 
   clear(): void {

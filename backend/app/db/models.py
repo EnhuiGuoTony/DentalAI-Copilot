@@ -39,7 +39,6 @@ class ClinicalCase(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     patient: Mapped[Patient] = relationship(back_populates="cases")
-    images: Mapped[list["XrayImage"]] = relationship(back_populates="case", cascade="all, delete-orphan")
 
 
 class ClinicalNote(Base):
@@ -53,38 +52,6 @@ class ClinicalNote(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     patient: Mapped[Patient] = relationship(back_populates="notes")
-
-
-class XrayImage(Base):
-    __tablename__ = "xray_images"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    patient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("patients.id"), index=True)
-    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("clinical_cases.id"), index=True)
-    file_path: Mapped[str] = mapped_column(Text, nullable=False)
-    width: Mapped[int | None]
-    height: Mapped[int | None]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    case: Mapped[ClinicalCase] = relationship(back_populates="images")
-    findings: Mapped[list["XrayFinding"]] = relationship(back_populates="image", cascade="all, delete-orphan")
-
-
-class XrayFinding(Base):
-    __tablename__ = "xray_findings"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    image_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("xray_images.id"), index=True)
-    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("clinical_cases.id"), index=True)
-    category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
-    tooth_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    bbox: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    polygon: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    review_status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending_review", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    image: Mapped[XrayImage] = relationship(back_populates="findings")
 
 
 class EmbeddingChunk(Base):

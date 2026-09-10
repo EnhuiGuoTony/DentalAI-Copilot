@@ -3,18 +3,8 @@ import json
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
-
 from app.core.config import get_settings
-from app.schemas.agent import AgentOutput
 from app.schemas.chat import ChatMessage
-
-
-class ClinicalDraftInput(BaseModel):
-    question: str
-    xray_findings: list[dict]
-    evidence: list[dict]
-    structured_facts: list[dict] = []
 
 
 class LlmService:
@@ -24,33 +14,6 @@ class LlmService:
     @property
     def enabled(self) -> bool:
         return bool(self._api_key()) and not self.settings.mock_llm
-
-    def generate_clinical_draft(self, payload: ClinicalDraftInput) -> AgentOutput:
-        if not self.enabled:
-            raise RuntimeError("LLM is disabled. Set MOCK_LLM=false and configure the selected provider API key.")
-
-        model = self._chat_model()
-        structured_model = model.with_structured_output(AgentOutput)
-        result = structured_model.invoke(
-            [
-                SystemMessage(
-                    content=(
-                        "You are DentalAI Copilot, a dental clinical support agent. Produce concise, "
-                        "evidence-backed drafts for licensed clinician review. Never present output as "
-                        "a final diagnosis. Do not claim to be any model provider, AI company, or other agent."
-                    )
-                ),
-                HumanMessage(
-                    content=(
-                        "Generate a structured clinical draft from this case context:\n"
-                        f"{json.dumps(payload.model_dump(), default=str)}"
-                    )
-                ),
-            ]
-        )
-        if not isinstance(result, AgentOutput):
-            return AgentOutput.model_validate(result)
-        return result
 
     def connect(self) -> tuple[bool, str]:
         """Prepare provider configuration without a model invocation or token use."""

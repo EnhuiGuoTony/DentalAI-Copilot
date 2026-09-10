@@ -58,6 +58,7 @@
       <p class="error" *ngIf="patientsError()">{{ patientsError() }}</p>
       <div class="patient-list" *ngIf="patients().length; else noPatients">
         <article class="patient" *ngFor="let patient of patients()">
+          <label class="select-patient"><input type="checkbox" [checked]="selectedPatientIds().includes(patient.id)" (change)="togglePatient(patient.id, $any($event.target).checked)" /> 选择</label>
           <strong>{{ patient.name }}</strong>
           <span>年龄：{{ age(patient) }}</span>
           <span>DOX ID：{{ patient.dox_patient_id ?? '—' }}</span>
@@ -65,6 +66,7 @@
           <span>病历号：{{ patient.medical_record_number ?? '—' }}</span>
         </article>
       </div>
+      <button type="button" class="primary summarize" (click)="summarizeSelected()" [disabled]="!selectedPatientIds().length || loading()">总结所选 {{ selectedPatientIds().length }} 位患者</button>
       <ng-template #noPatients><p class="empty">尚未导入患者数据。</p></ng-template>
     </article>
   </section>

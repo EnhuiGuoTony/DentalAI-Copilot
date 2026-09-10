@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     google_model: str = "gemini-3.8-flash"
     embedding_dim: int = 384
     mock_llm: bool = True
-    mock_vision: bool = True
 
     # Load the backend-local file no matter which directory starts Uvicorn.
     model_config = SettingsConfigDict(

@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import ClinicalCase, ClinicalFact, ClinicalNote, Patient, XrayFinding, XrayImage
+from app.db.models import ClinicalCase, ClinicalFact, ClinicalNote, Patient
 from app.services.vector_store import VectorStore
 
 
@@ -34,7 +34,6 @@ class PatientContextService:
         patient_ids = [patient.id for patient in patients]
         case_counts = self._counts_by_patient(ClinicalCase.patient_id, patient_ids)
         note_counts = self._counts_by_patient(ClinicalNote.patient_id, patient_ids)
-        image_counts = self._counts_by_patient(XrayImage.patient_id, patient_ids)
 
         patient_summaries = [
             {
@@ -47,7 +46,6 @@ class PatientContextService:
                 "medical_record_number": patient.medical_record_number,
                 "case_count": case_counts.get(patient.id, 0),
                 "note_count": note_counts.get(patient.id, 0),
-                "image_count": image_counts.get(patient.id, 0),
             }
             for patient in patients
         ]
@@ -160,8 +158,6 @@ class PatientContextService:
             "patients": int(self.db.scalar(select(func.count()).select_from(Patient)) or 0),
             "cases": int(self.db.scalar(select(func.count()).select_from(ClinicalCase)) or 0),
             "notes": int(self.db.scalar(select(func.count()).select_from(ClinicalNote)) or 0),
-            "images": int(self.db.scalar(select(func.count()).select_from(XrayImage)) or 0),
-            "findings": int(self.db.scalar(select(func.count()).select_from(XrayFinding)) or 0),
             "clinical_facts": int(self.db.scalar(select(func.count()).select_from(ClinicalFact)) or 0),
         }
 

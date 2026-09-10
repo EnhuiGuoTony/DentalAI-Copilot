@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class CaseCreate(BaseModel):
-    title: str = "X-ray review"
+    title: str = "Patient chart review"
 
 
 class CaseRead(BaseModel):
@@ -16,4 +16,3 @@ class CaseRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-

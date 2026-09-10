@@ -22,7 +22,7 @@ def seed() -> None:
         db.add(patient)
         db.flush()
 
-        case = ClinicalCase(patient_id=patient.id, title="Bitewing X-ray review", status="draft")
+        case = ClinicalCase(patient_id=patient.id, title="Patient chart review", status="draft")
         db.add(case)
         db.flush()
 
@@ -72,4 +72,3 @@ def seed() -> None:
 
 if __name__ == "__main__":
     seed()
-
