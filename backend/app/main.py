@@ -33,3 +33,7 @@ app.include_router(cases.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(dox_import.router, prefix="/api")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)

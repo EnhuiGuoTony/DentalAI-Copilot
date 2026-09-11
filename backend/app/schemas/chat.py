@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from uuid import UUID
 
 MAX_CHAT_MESSAGE_CHARS = 4_000
-MAX_CHAT_HISTORY_MESSAGES = 6
+MAX_CHAT_HISTORY_MESSAGES = 4
 
 
 class ChatMessage(BaseModel):
@@ -22,6 +22,15 @@ class ChatResponse(BaseModel):
     provider: str
     mock: bool
     tool_trace: list[str] = Field(default_factory=list)
+    token_usage: "TokenUsage"
+
+
+class TokenUsage(BaseModel):
+    """Cumulative token usage for all model calls made to answer one turn."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 class ChatConnectionResponse(BaseModel):

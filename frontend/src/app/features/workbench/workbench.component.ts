@@ -13,7 +13,7 @@ import { ChatMessage, DoxImportSummary, DoxPreviewResponse, Patient } from '../.
   styleUrl: './workbench.component.scss'
 })
 export class WorkbenchComponent implements OnInit {
-  private readonly maxHistoryMessages = 6;
+  private readonly maxHistoryMessages = 4;
   private readonly maxMessageChars = 4000;
   private conversationHistory: ChatMessage[] = [];
 
@@ -120,7 +120,9 @@ export class WorkbenchComponent implements OnInit {
     const message = this.input().trim();
     if (!message || this.loading() || !this.connected()) return;
 
-    const history = this.conversationHistory.slice(-this.maxHistoryMessages);
+    const history = this.conversationHistory
+      .slice(-this.maxHistoryMessages)
+      .map(({ role, content }) => ({ role, content }));
     const userTurn: ChatMessage = {
       role: 'user',
       content: message.slice(0, this.maxMessageChars)
@@ -133,7 +135,11 @@ export class WorkbenchComponent implements OnInit {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: response => {
-          const assistantTurn: ChatMessage = { role: 'assistant', content: response.reply };
+          const assistantTurn: ChatMessage = {
+            role: 'assistant',
+            content: response.reply,
+            tokenUsage: response.token_usage
+          };
           this.conversationHistory = [...this.conversationHistory, userTurn, assistantTurn]
             .slice(-this.maxHistoryMessages);
           this.messages.set([...this.messages(), assistantTurn]);

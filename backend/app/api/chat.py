@@ -1,11 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-
+from app.services.llm_service import LlmService
 from app.db.session import get_db
 from app.schemas.chat import ChatConnectionResponse, ChatRequest, ChatResponse
-from app.services.llm_service import LlmService
-from app.services.llm_privacy_service import LlmPrivacyService
-from app.services.patient_context_service import PatientContextService
 from app.services.pms_agent_service import PmsAgentService
 
 router = APIRouter(tags=["chat"])
@@ -27,24 +24,11 @@ def connect_chat() -> ChatConnectionResponse:
 @router.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     pms_agent = PmsAgentService(db)
-    if request.patient_ids or pms_agent.matches_question(request.message):
-        reply, trace = pms_agent.run(request.message, request.patient_ids)
-        return ChatResponse(reply=reply, provider="langchain:pms-agent", mock=not LlmService().enabled, tool_trace=trace)
-    llm = LlmService()
-    context_service = PatientContextService(db)
-    context = context_service.build(request.message)
-    if not llm.enabled or context_service.requires_deterministic_answer(request.message):
-        reply = context_service.mock_answer(context)
-    else:
-        privacy = LlmPrivacyService(db)
-        safe_context = privacy.redact(context)
-        safe_message = privacy.redact(request.message)
-        safe_history = [item.model_copy(update={"content": privacy.redact(item.content)}) for item in request.history]
-        reply = llm.chat(safe_message, safe_history, patient_context=safe_context)
-        if context_service.is_unhelpful_model_reply(reply):
-            reply = context_service.mock_answer(context)
+    reply, trace, token_usage = pms_agent.run(request.message, request.patient_ids, request.history)
     return ChatResponse(
         reply=reply,
-        provider=llm.provider_label(),
-        mock=not llm.enabled,
+        provider="langchain:pms-agent",
+        mock=not pms_agent.llm.enabled,
+        tool_trace=trace,
+        token_usage=token_usage,
     )

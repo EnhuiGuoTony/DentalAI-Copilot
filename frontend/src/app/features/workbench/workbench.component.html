@@ -75,6 +75,10 @@
     <div class="messages">
       <article *ngFor="let message of messages()" [class.user]="message.role === 'user'">
         <p>{{ message.content }}</p>
+        <small class="token-usage" *ngIf="message.role === 'assistant' && message.tokenUsage">
+          Token 消耗：{{ message.tokenUsage.total_tokens }}
+          （输入 {{ message.tokenUsage.input_tokens }}，输出 {{ message.tokenUsage.output_tokens }}）
+        </small>
       </article>
     </div>
 
