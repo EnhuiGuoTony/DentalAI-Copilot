@@ -271,6 +271,11 @@ class DoxMySqlImporter:
         return self.target_db.get(Patient, patient_id) or patient
 
     def _import_patient_notes(self, engine: Engine, source_patient_id: int, patient_id: uuid.UUID, deidentify: bool) -> int:
+        """把源系统笔记同时导入原文表和患者向量表，建立可追溯的检索材料。
+
+        原文用于时间线与最近笔记工具，分块用于 RAG；同一材料服务于不同查询方式。
+        HTML 先转纯文本，按请求决定是否脱敏，随后再分块生成向量。
+        """
         rows = self._safe_fetch(
             engine,
             "Notes",
@@ -414,6 +419,8 @@ class DoxMySqlImporter:
             text_value = "\n".join(parts)
             if not text_value or source_pk is None:
                 continue
+            # 共享知识保留字段名称以提供上下文，再按块编码；它不绑定具体患者。
+            # 稳定 UUID 使相同来源与块序号在重复导入时定位到相同记录。
             source_id = stable_dox_uuid(table_name, source_pk)
             for idx, chunk in enumerate(chunk_text(text_value)):
                 chunk_id = stable_dox_uuid(f"KnowledgeChunk:{table_name}", source_pk, idx)
@@ -518,6 +525,8 @@ class DoxMySqlImporter:
                 summary = deidentify_clinical_text(summary)
             if not summary:
                 summary = f"{label_prefix} imported from DOX {table_name} #{source_pk}"
+            # 结构化事实直接保存业务字段和摘要，不在此处向量化。
+            # Agent 可用 SQL 工具按患者读取这些记录，不必所有问题都走 RAG。
             fact = ClinicalFact(
                 id=stable_dox_uuid(f"ClinicalFact:{table_name}", source_pk),
                 patient_id=patient_id,
@@ -542,6 +551,12 @@ class DoxMySqlImporter:
         text_value: str,
         metadata: dict[str, Any],
     ) -> None:
+        """按来源和分块序号更新患者向量块，保留患者范围与来源元数据。
+
+        merge 按稳定主键插入或更新，与 VectorStore.add_chunk 的新增方式不同。
+        此处不删除旧块；原文缩短、分块数减少后，多余的历史块不会自动清理。
+        写入仍在调用者的事务里，由外层方法提交。
+        """
         for idx, chunk in enumerate(chunk_text(text_value)):
             self.target_db.merge(
                 EmbeddingChunk(

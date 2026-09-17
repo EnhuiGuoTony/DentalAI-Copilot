@@ -37,6 +37,7 @@ def get_patient(patient_id: UUID, db: Session = Depends(get_db)):
 
 @router.post("/{patient_id}/notes", response_model=ClinicalNoteRead)
 def create_note(patient_id: UUID, req: ClinicalNoteCreate, db: Session = Depends(get_db)):
+    # 创建原始笔记与创建向量分开：这里仅存笔记，需要调用 ingest 才能进入向量召回。
     if db.get(Patient, patient_id) is None:
         raise HTTPException(status_code=404, detail="Patient not found")
     note = ClinicalNote(patient_id=patient_id, note_type=req.note_type, content=req.content)
@@ -48,6 +49,11 @@ def create_note(patient_id: UUID, req: ClinicalNoteCreate, db: Session = Depends
 
 @router.post("/{patient_id}/notes/ingest")
 def ingest_notes(patient_id: UUID, db: Session = Depends(get_db)):
+    """患者笔记的索引构建入口：读取原文 -> 重叠分块 -> 生成向量 -> 批量提交。
+
+    当前实现每次都新增所有块，没有去重或删除旧块；重复调用可能重复索引。
+    它只是构建检索数据，不是训练或微调大模型。
+    """
     notes = db.execute(select(ClinicalNote).where(ClinicalNote.patient_id == patient_id)).scalars().all()
     store = VectorStore(db)
     created = 0
@@ -58,6 +64,7 @@ def ingest_notes(patient_id: UUID, db: Session = Depends(get_db)):
                 source_type="clinical_note",
                 source_id=note.id,
                 text=chunk,
+                # 一个 source_id 对应多块，chunk_index 标记块在原笔记中的顺序。
                 metadata={"note_type": note.note_type, "chunk_index": idx},
             )
             created += 1
@@ -79,4 +86,3 @@ def get_timeline(patient_id: UUID, db: Session = Depends(get_db)):
         for c in cases
     )
     return sorted(items, key=lambda item: item.created_at, reverse=True)
-

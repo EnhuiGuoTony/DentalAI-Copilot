@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     dox_import_patient_limit: int = 10
     dox_import_batch_size: int = 200
     upload_dir: str = "uploads"
+    # 聊天模型配置只影响回答/工具调用；检索向量仍由本地 EmbeddingService 生成。
     llm_provider: str = "openrouter"
     llm_api_key: str = ""
     llm_base_url: str = "https://openrouter.ai/api/v1"
@@ -20,7 +21,9 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     google_api_key: str = ""
     google_model: str = "gemini-3.8-flash"
+    # 向量长度同时用于编码器和数据库列定义，不是聊天模型的上下文窗口大小。
     embedding_dim: int = 384
+    # True 时禁用真实聊天模型；检索和数据库操作仍可运行，不需要模型密钥。
     mock_llm: bool = True
 
     # Load the backend-local file no matter which directory starts Uvicorn.
@@ -32,4 +35,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    # 缓存配置，避免每次请求重复读取；修改环境文件后通常需要重启进程。
     return Settings()

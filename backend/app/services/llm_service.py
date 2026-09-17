@@ -8,15 +8,21 @@ from app.schemas.chat import ChatMessage
 
 
 class LlmService:
+    """统一聊天模型的配置与实例化，隔离 OpenAI 兼容接口和 Google 接口差异。
+
+    PmsAgentService 使用这里的模型工厂执行工具循环；chat 方法提供普通单次对话，
+    当前 /chat 路由实际调用 PmsAgentService，不直接使用下面的 chat 方法。
+    """
     def __init__(self) -> None:
         self.settings = get_settings()
 
     @property
     def enabled(self) -> bool:
+        # 只判断本地配置，不验证密钥是否有效、网络是否连通或模型是否支持工具调用。
         return bool(self._api_key()) and not self.settings.mock_llm
 
     def connect(self) -> tuple[bool, str]:
-        """Prepare provider configuration without a model invocation or token use."""
+        """检查配置并尝试构造客户端，不发起模型请求，因此不代表远端连接测试成功。"""
         if self.settings.mock_llm:
             return True, "Mock LLM is ready."
         if not self._api_key():
@@ -28,12 +34,14 @@ class LlmService:
         return True, "Model configuration is ready."
 
     def chat(self, message: str, history: list[ChatMessage] | None = None, patient_context: dict | None = None) -> str:
+        """一次性发送系统指令、历史与可选数据库上下文；这里不注册工具或自动检索。"""
         if not self.enabled:
             return (
                 "Mock response: OpenRouter is not enabled yet. Set MOCK_LLM=false "
                 "and configure OPENROUTER_API_KEY to receive real model responses."
             )
 
+        # 系统指令保持英文；提示词表达约束，但本身不能保证模型绝不产生幻觉。
         messages = [
             SystemMessage(
                 content=(
@@ -51,14 +59,16 @@ class LlmService:
                 )
             )
         ]
-        # The API schema only permits prior user/assistant turns. The server
-        # owns the system prompt, preventing irrelevant client context.
+        # 客户端只能提供用户/助手历史，系统角色由服务端控制。
+        # 这是消息角色边界，并不等同于对用户文本中的提示词注入做了完整防护。
         for item in history or []:
             if item.role == "user":
                 messages.append(HumanMessage(content=item.content))
             elif item.role == "assistant":
                 messages.append(AIMessage(content=item.content))
 
+        # 上下文序列化为 JSON 后附到本轮用户消息，并不会变成模型权重或长期记忆。
+        # 本方法不自行脱敏，调用者需在进入模型边界前处理敏感信息。
         context_suffix = ""
         if patient_context is not None:
             context_suffix = f"\n\nCHART CONTEXT (read-only database result):\n{json.dumps(patient_context, default=str)}"
@@ -75,6 +85,7 @@ class LlmService:
         return f"openai:{self.settings.llm_model}"
 
     def _api_key(self) -> str:
+        """优先读取提供方专用密钥，缺失时回退到通用密钥；密钥只留在后端配置中。"""
         provider = self.settings.llm_provider.lower()
         if provider == "google":
             return self.settings.google_api_key or self.settings.llm_api_key
@@ -83,6 +94,9 @@ class LlmService:
         return self.settings.llm_api_key
 
     def _chat_model(self):
+        """按提供方创建 LangChain 聊天客户端；真正发出请求发生在 invoke 等调用时。"""
+        # 较低 temperature 用于减少回答随机性，但不保证确定性或事实正确性。
+        # OpenRouter 使用 OpenAI 兼容协议，通过 base_url 切换服务入口。
         provider = self.settings.llm_provider.lower()
         if provider == "google":
             return ChatGoogleGenerativeAI(

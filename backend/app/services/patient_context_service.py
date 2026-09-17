@@ -1,8 +1,8 @@
-"""Read-only chart context for the general DentalAI assistant.
+"""组合关系型查询和向量检索，演示如何在调用模型前主动准备病历上下文。
 
-RAG is useful for narrative chart notes, but exact operational questions such as
-"how many patients?" must be answered from relational data rather than similarity
-search.  This service combines both sources into a bounded, auditable context.
+RAG 适合寻找相关叙述，精确数量必须来自 SQL。这里由代码预先决定查询内容，
+与 PmsAgentService 中“模型自主选择工具”的方式不同；当前 /chat 使用后者。
+此服务包含跨患者查询，不自行执行授权或脱敏，不能将其输出视为可直接外发的数据。
 """
 
 from collections import Counter
@@ -16,6 +16,7 @@ from app.services.vector_store import VectorStore
 
 
 class PatientContextService:
+    # 上限用于控制上下文体积，但条数限制并不是严格的 token 预算。
     max_patients = 50
     max_notes = 12
     max_facts = 12
@@ -26,7 +27,7 @@ class PatientContextService:
         self.vector_store = VectorStore(db)
 
     def build(self, question: str) -> dict[str, Any]:
-        """Build only data that the assistant is allowed to cite; never writes."""
+        """只读构造统计、患者摘要、事实和检索证据；各列表可能被截断。"""
         stats = self._stats()
         patients = self.db.execute(
             select(Patient).order_by(Patient.created_at.desc()).limit(self.max_patients)
@@ -54,9 +55,10 @@ class PatientContextService:
         named_patient_ids = {
             patient.id for patient in patients if patient.name and patient.name.lower() in question.lower()
         }
+        # 把向量命中的患者与问题明确提到的患者合并，兼顾检索和简单名称匹配。
         focus_ids = evidence_patient_ids | named_patient_ids
-        # For a small demo corpus this provides genuinely useful answers even when
-        # the deterministic demo embedding cannot understand the user's language.
+        # 小样本时扩大到已读取的所有患者，以补偿演示哈希向量的语义理解不足。
+        # 这会带入并非直接相关的上下文，不是精确召回或权限隔离机制。
         if len(patients) <= 10:
             focus_ids.update(patient_ids)
 
@@ -76,6 +78,7 @@ class PatientContextService:
                 .limit(self.max_facts)
             ).scalars().all()
 
+        # 返回 limits 让使用方区分“全库统计”与“有限长度的明细”，避免将明细当全量。
         names = {patient.id: patient.name for patient in patients}
         return {
             "statistics": stats,
@@ -105,7 +108,11 @@ class PatientContextService:
         }
 
     def mock_answer(self, context: dict[str, Any]) -> str:
-        """Useful, non-hallucinatory fallback when no model provider is configured."""
+        """按固定模板展示上下文，不调用模型。
+
+        注意：此保留模板仍读取 images/findings/image_count 字段，而当前 build/_stats
+        不提供这些字段，直接组合调用会出现 KeyError；当前聊天入口不使用此路径。
+        """
         stats = context["statistics"]
         lines = [
             "当前数据库中的病人概览：",
@@ -141,7 +148,7 @@ class PatientContextService:
 
     @staticmethod
     def requires_deterministic_answer(question: str) -> bool:
-        """Identify questions for which an LLM must not be the source of truth."""
+        """用关键词识别统计/列表问题，提示调用方应以数据库结果为事实来源。"""
         normalized = question.lower()
         chart_terms = ("病人", "患者", "病历", "病例", "笔记", "x光", "影像", "patient", "patients", "case", "cases", "note", "notes")
         operation_terms = ("多少", "几个", "几位", "总数", "数量", "列表", "列出", "全部", "count", "how many", "total", "list", "all")
@@ -154,6 +161,7 @@ class PatientContextService:
         return any(marker in normalized for marker in markers)
 
     def _stats(self) -> dict[str, int]:
+        """通过 COUNT 得到全库精确数量，不受明细列表和 Top-K 的条数上限影响。"""
         return {
             "patients": int(self.db.scalar(select(func.count()).select_from(Patient)) or 0),
             "cases": int(self.db.scalar(select(func.count()).select_from(ClinicalCase)) or 0),
