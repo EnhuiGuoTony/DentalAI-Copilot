@@ -41,3 +41,4 @@ class StreamEvent(BaseModel):
     review: PendingReview | None = None
     result: AgentAnswer | None = None
     mock: bool = False
+    error_code: str | None = None

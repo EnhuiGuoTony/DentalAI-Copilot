@@ -20,6 +20,7 @@ from app.schemas.conversation import PendingReview, ReviewAction, ResumeRequest,
 from app.schemas.operations import AgentAnswer
 from app.services.agent_memory import memory
 from app.services.pms_agent_service import PatientAliases, PmsAgentService
+from app.services.structured_output_middleware import needs_finalization
 
 
 class DemoModel(BaseChatModel):
@@ -49,7 +50,9 @@ def owned_conversation(db, conversation_id: UUID, user_id: UUID) -> Conversation
 def conversation_lock(conversation_id: UUID):
     # 会话锁使用专用连接，所有退出路径都解锁；锁在不同 API worker 间同样有效。
     key = int.from_bytes(conversation_id.bytes[:8], "big", signed=True)
-    with engine.connect() as connection:
+    # advisory lock 属于连接，无需持有数据库事务。长时间的模型调用若保留事务快照，
+    # 会阻塞 CREATE INDEX CONCURRENTLY 等维护操作，甚至使 checkpoint 初始化一直等待。
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         locked = connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
         if not locked:
             raise HTTPException(409, "This conversation is already running")
@@ -57,7 +60,6 @@ def conversation_lock(conversation_id: UUID):
             yield
         finally:
             connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-            connection.commit()
 
 
 def pending_review(snapshot, aliases: PatientAliases) -> PendingReview | None:
@@ -98,7 +100,7 @@ def conversation_state(conversation_id: UUID, user_id: UUID) -> dict:
                         transcript.append({"role": "assistant", "content": service.aliases.reveal(answer.answer)})
         return {"id": str(conversation_id), "messages": transcript,
                 "review": review.model_dump(mode="json") if review else None,
-                "can_continue": bool(snapshot.next) and not review}
+                "can_continue": bool(snapshot.next or needs_finalization(snapshot.values)) and not review}
 
 
 def stream_turn(conversation_id: UUID, user_id: UUID, message: str | None = None, resume: ResumeRequest | None = None):
@@ -129,11 +131,14 @@ def stream_turn(conversation_id: UUID, user_id: UUID, message: str | None = None
             elif message is not None:
                 if review or snapshot.next:
                     raise HTTPException(409, "Resolve or continue the existing run before sending another message")
-                graph_input = {"messages": [HumanMessage(content=service.aliases.hide(message))]}
+                graph_input = {"messages": [HumanMessage(content=service.aliases.hide(message))],
+                               "finalization_only": False, "structured_output_retries": 0, "output_error": None}
             else:
-                if review or not snapshot.next:
+                if review or (not snapshot.next and not needs_finalization(snapshot.values)):
                     raise HTTPException(409, "No interrupted execution is available to continue")
-                graph_input = None
+                # 旧图已结束但缺少结构化结果时，只重新生成最终答案，绝不重放整轮业务操作。
+                graph_input = None if snapshot.next else {"finalization_only": True,
+                    "structured_output_retries": 0, "output_error": None}
             yield encode(StreamEvent(type="status", message="正在恢复执行" if resume or message is None else "正在处理请求", mock=not service.llm.enabled))
             for update in graph.stream(graph_input, config=config, stream_mode="updates"):
                 for node, values in update.items():
@@ -164,6 +169,8 @@ def stream_turn(conversation_id: UUID, user_id: UUID, message: str | None = None
                                 yield encode(StreamEvent(type="tool", tool_name=msg.name, message=label))
                     if node == "model":
                         yield encode(StreamEvent(type="status", message="模型步骤完成"))
+                    elif node == "StructuredOutputMiddleware.after_model" and isinstance(values, dict) and values.get("jump_to") == "model":
+                        yield encode(StreamEvent(type="status", message="正在纠正模型回答格式（不会重复执行业务操作）"))
             snapshot = graph.get_state(config)
             review = pending_review(snapshot, service.aliases)
             if review:
@@ -171,7 +178,12 @@ def stream_turn(conversation_id: UUID, user_id: UUID, message: str | None = None
             else:
                 raw = snapshot.values.get("structured_response")
                 if raw is None:
-                    raise RuntimeError("Missing structured response")
+                    code = snapshot.values.get("output_error") or "structured_output_missing"
+                    detail = ("模型提供方返回了错误或无效响应，请稍后重新发送。"
+                              if code == "provider_response_error" else
+                              "模型未按要求返回结构化答案。请刷新会话后点击继续，仅补全回答；若仍失败，请更换支持工具调用的模型。")
+                    yield encode(StreamEvent(type="error", message=detail, error_code=code))
+                    return
                 answer = AgentAnswer.model_validate(raw)
                 answer = AgentAnswer.model_validate(service.aliases.transform(answer.model_dump(), reveal=True))
                 yield encode(StreamEvent(type="result", result=answer, mock=not service.llm.enabled))

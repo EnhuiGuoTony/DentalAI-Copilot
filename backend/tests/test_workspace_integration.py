@@ -40,7 +40,9 @@ def workspace(monkeypatch):
     try:
         # checkfirst=False 避免把 public 中同名业务表误认为测试表已经存在。
         Base.metadata.create_all(engine, checkfirst=False)
-        monkeypatch.setattr(get_settings(), "database_url", test_url.render_as_string(hide_password=False))
+        # checkpoint 建表时不搜索 public，避免误复用正在运行应用的同名 checkpoint 表。
+        checkpoint_test_url = test_url.update_query_dict({"options": f"-csearch_path={schema}"})
+        monkeypatch.setattr(get_settings(), "database_url", checkpoint_test_url.render_as_string(hide_password=False))
         monkeypatch.setattr(get_settings(), "mock_llm", True)
         monkeypatch.setattr(pms_agent_service, "SessionLocal", factory)
         monkeypatch.setattr(conversation_service, "SessionLocal", factory)
@@ -308,3 +310,38 @@ def test_concurrent_appointments_cannot_double_book(workspace):
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(client.post, "/api/appointments", json=data) for _ in range(2)]
         assert sorted(f.result().status_code for f in futures) == [201, 409]
+
+
+def test_plain_provider_reply_is_repaired_and_persisted_through_sse(workspace, monkeypatch):
+    """覆盖真实流式路由，不只检查图的 invoke 返回值。"""
+    from test_structured_output_recovery import IrregularModel
+    provider = IrregularModel(responses=["plain", "structured"])
+    original = pms_agent_service.PmsAgentService.build
+    monkeypatch.setattr(pms_agent_service.PmsAgentService, "build", lambda self, saver, model=None: original(self, saver, provider))
+    client = TestClient(app); register(client)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    result = events(client.post(f"/api/conversations/{cid}/messages", json={"message": "Hello"}))
+    assert result[-1]["type"] == "result", result
+    assert any("纠正" in event["message"] for event in result)
+    restored = client.get(f"/api/conversations/{cid}").json()
+    assert restored["messages"][-1]["content"] == "Validated answer 2"
+    assert restored["can_continue"] is False
+
+
+def test_legacy_missing_answer_can_continue_without_replaying_writes(workspace, monkeypatch):
+    from test_structured_output_recovery import IrregularModel
+    from langchain_core.messages import HumanMessage
+    provider = IrregularModel(responses=["structured"])
+    original = pms_agent_service.PmsAgentService.build
+    monkeypatch.setattr(pms_agent_service.PmsAgentService, "build", lambda self, saver, model=None: original(self, saver, provider))
+    client = TestClient(app); user = register(client)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    with conversation_service.graph_context(UUID(cid), UUID(user["id"])) as (graph, config, service):
+        graph.update_state(config, {"messages": [HumanMessage(content="Hello"), AIMessage(content="Legacy reply")], "structured_response": None}, as_node="StructuredOutputMiddleware.after_model")
+        assert not graph.get_state(config).next
+    assert client.get(f"/api/conversations/{cid}").json()["can_continue"] is True
+    result = events(client.post(f"/api/conversations/{cid}/continue"))
+    assert result[-1]["type"] == "result", result
+    assert provider.tool_sets == [["AgentAnswer"]]
+    with workspace() as db:
+        assert db.scalar(select(func.count()).select_from(MutationReceipt)) == 0

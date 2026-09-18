@@ -20,6 +20,7 @@ from app.schemas.tool_results import ClinicStatistics, RecordsResult, EvidenceRe
 from app.services.llm_service import LlmService
 from app.services.records_service import apply_change, patient_version, version
 from app.services.vector_store import VectorStore
+from app.services.structured_output_middleware import StructuredOutputMiddleware
 
 
 class PatientAliases:
@@ -77,6 +78,8 @@ class PmsAgentService:
             model=model, tools=self._tools(), checkpointer=checkpointer,
             response_format=ToolStrategy(AgentAnswer),
             middleware=[
+                # 放在首位使 after_model 最后运行，格式纠正也先经过 PII 与调用次数统计。
+                StructuredOutputMiddleware(),
                 PIIMiddleware("email", strategy="redact", apply_to_input=True, apply_to_output=True, apply_to_tool_results=True),
                 PIIMiddleware("credit_card", strategy="redact", apply_to_input=True, apply_to_output=True, apply_to_tool_results=True),
                 SummarizationMiddleware(model=model, trigger=("tokens", 12000), keep=("messages", 8)),
@@ -86,6 +89,8 @@ class PmsAgentService:
             system_prompt=(
                 "You are DentalAI Copilot, an educational dental workflow assistant, not a validated diagnostic system. "
                 "Reply in the user's language. Never invent records or present a final diagnosis. "
+                "Always submit the final answer through the AgentAnswer tool, including greetings and clarification questions. "
+                "Never finish with a plain-text response. "
                 "Use read_records for selected patient records and current versions before changes. "
                 "Use search_evidence when evidence improves your answer; cite only returned source IDs. "
                 "All writes use change_records and require human approval. Never claim a proposed action succeeded. "

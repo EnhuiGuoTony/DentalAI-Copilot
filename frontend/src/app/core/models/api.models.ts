@@ -89,5 +89,6 @@ export interface AgentAnswer { answer: string; evidence_ids: string[]; limitatio
 export interface AgentEvent {
   type: 'status' | 'tool' | 'approval' | 'result' | 'error'; message: string;
   tool_name: string | null; review: PendingReview | null; result: AgentAnswer | null; mock: boolean;
+  error_code?: string | null;
 }
 export interface ConversationState { id: string; messages: ChatMessage[]; review: PendingReview | null; can_continue: boolean; }

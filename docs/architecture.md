@@ -33,6 +33,8 @@ Every business router is mounted with the authentication dependency in `main.py`
 
 `schemas/operations.py` defines a discriminated Pydantic union for eight mutations: patient create/update/delete, appointment create/update/delete, note add/delete. `ToolStrategy(AgentAnswer)` validates the final answer, evidence IDs and limitations, with bounded graph execution. Provider models must support tool calling and structured-output tools. Mock mode emits a labeled structured response without external model calls or natural-language mutations.
 
+Some providers ignore required tool choice and finish with plain text. `StructuredOutputMiddleware` detects this and permits at most two additional formatting attempts, exposing only `AgentAnswer` during those attempts. These calls still pass through model-call limits and PII checks. Plain text is never silently accepted as a validated answer. Exhausted retries and provider error responses produce distinct safe error codes. Legacy conversations that ended without structured output can use Continue to finish only the answer, without replaying business tools.
+
 The read tools return selected patient records, exact clinic statistics and scoped RAG evidence. The selected patient IDs are fixed at conversation creation. Start a new conversation to change scope or operate on a newly created patient. This scope is enforced in code, separately from clinic membership and prompts.
 
 ## Approval, transactions and recovery
