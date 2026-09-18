@@ -1,152 +1,77 @@
-<main class="shell">
-  <header class="topbar">
-    <h1>DentalAI Copilot</h1>
-    <button type="button" (click)="connect()" [disabled]="connecting() || connected()">
-      {{ connectionLabel() }}
-    </button>
-  </header>
-
-  <section class="data-grid" aria-label="DOX 导入与患者信息">
-    <article class="card import-card">
-      <div class="card-heading">
-        <div>
-          <h2>DOX 数据导入</h2>
-          <p>先预览源库，再导入患者文本病历与临床数据。</p>
+<!-- 导航只切换可见性，保留会话、SSE 和未保存的表单；审批弹窗独立于当前页面。 -->
+<div class="workspace">
+  <aside class="sidebar">
+    <a class="brand" href="#" (click)="$event.preventDefault(); section.set('agent')"><span class="brand-icon">D<span>✳</span></span><span>DentalAI<small>C O P I L O T</small></span></a>
+    <p class="nav-caption">WORKSPACE</p>
+    <nav aria-label="工作区导航">
+      <button [class.active]="section() === 'agent'" [attr.aria-current]="section() === 'agent' ? 'page' : null" (click)="section.set('agent')"><span aria-hidden="true">✳</span>智能工作台<span class="nav-arrow">↗</span></button>
+      <button [class.active]="section() === 'appointments'" [attr.aria-current]="section() === 'appointments' ? 'page' : null" (click)="section.set('appointments')"><span aria-hidden="true">▦</span>预约管理<span class="nav-count">{{ appointments().length }}</span></button>
+      <button [class.active]="section() === 'imports'" [attr.aria-current]="section() === 'imports' ? 'page' : null" (click)="section.set('imports')"><span aria-hidden="true">⇅</span>数据导入</button>
+    </nav>
+    <div class="sidebar-note"><span class="tiny-dot"></span> 人与 AI，共同协作<p>让信息更清晰，<br>让每一步都有依据。</p></div>
+    <div class="sidebar-footer">DentalAI / Educational demo<small>用于学习与演示，不作为临床诊断依据</small></div>
+  </aside>
+  <main class="shell">
+    <header class="topbar"><div class="breadcrumb">诊所工作区 <span>/</span> {{ section() === 'agent' ? '智能工作台' : section() === 'appointments' ? '预约管理' : '数据导入' }}</div><button class="model-connect" [class.is-connected]="connected()" (click)="connect()" [disabled]="connecting() || connected()"><span class="tiny-dot"></span>{{ connectionLabel() }}</button></header>
+    <div class="page-heading"><div><p class="eyebrow">YOUR CLINICAL WORKSPACE</p><h1>{{ section() === 'agent' ? '专注诊疗，让 AI 协助其余。' : section() === 'appointments' ? '让每一次就诊，井然有序。' : '从完整的记录开始。' }}</h1><p>{{ section() === 'agent' ? '病历、证据与行动，在一个工作空间里连接。' : section() === 'appointments' ? '查看患者预约，安排与跟进每一次到访。' : '连接 DOX 数据源，将患者记录带入工作区。' }}</p></div><span class="workspace-tag">共享诊所 · 私有会话</span></div>
+    <div class="overview-strip"><div><span>患者档案</span><strong>{{ patients().length }}<small> 位</small></strong></div><div><span>预约记录</span><strong>{{ appointments().length }}<small> 项</small></strong></div><div><span>我的会话</span><strong>{{ conversations().length }}<small> 个</small></strong></div><div><span>待确认操作</span><strong>{{ review()?.actions?.length ?? 0 }}<small> 项</small></strong></div></div>
+    <div class="agent-layout" [hidden]="section() !== 'agent'">
+      <section class="chat-panel">
+        <div class="agent-toolbar">
+          <div class="agent-title"><span class="ai-mark" aria-hidden="true">✳</span><div><h2>Copilot</h2><p class="hint">你的临床工作流助手</p></div></div>
+          <label class="history-select"><span class="sr-only">我的会话</span><select [ngModel]="activeConversation() ?? ''" (ngModelChange)="openConversation($event)" [disabled]="loading()"><option value="" disabled>历史会话</option>@for (conversation of conversations(); track conversation.id) { <option [value]="conversation.id">{{ conversation.created_at | date:'MM-dd HH:mm' }} · {{ conversation.patient_ids.length }} 位患者 · {{ conversation.id.slice(0, 8) }}</option> }</select></label>
+          <button (click)="clear()" [disabled]="loading()">＋ 新会话</button>@if (activeConversation(); as id) { <button (click)="openConversation(id)" [disabled]="loading()">刷新</button> }
         </div>
-        <button type="button" (click)="previewDox()" [disabled]="previewLoading() || importLoading()">
-          {{ previewLoading() ? '正在预览…' : '预览 DOX' }}
-        </button>
-      </div>
-
-      <ng-container *ngIf="doxPreview() as preview">
-        <p class="connection" [class.ok]="preview.connected">
-          {{ preview.connected ? 'DOX 数据源已连接' : 'DOX 数据源未连接' }}
-        </p>
-        <dl class="table-counts" *ngIf="preview.connected">
-          <div *ngFor="let table of preview.tables | keyvalue">
-            <dt>{{ table.key }}</dt><dd>{{ table.value ?? '不可用' }}</dd>
-          </div>
-        </dl>
-        <p class="warning" *ngFor="let warning of preview.warnings">{{ warning }}</p>
-      </ng-container>
-
-      <div class="import-controls">
-        <label>
-          导入患者数
-          <input type="number" min="1" max="500" [ngModel]="importPatientLimit()" (ngModelChange)="importPatientLimit.set($event)" />
-        </label>
-        <button type="button" class="primary" (click)="importDox()" [disabled]="importLoading()">
-          {{ importLoading() ? '正在导入…' : '开始导入' }}
-        </button>
-      </div>
-      <p class="hint">导入保留原文；Agent 使用患者替代标识和 PII 中间件。未知敏感信息仍可能需要人工处理。</p>
-      <p class="error" *ngIf="importError()">{{ importError() }}</p>
-      <div class="result" *ngIf="importResult() as result">
-        <strong>导入{{ result.status }}</strong>
-        <span>患者 {{ result.patients_imported }}/{{ result.patients_requested }} · 笔记 {{ result.notes_imported }} · 临床事实 {{ result.clinical_facts_imported }}</span>
-        <p class="warning" *ngFor="let warning of result.warnings">{{ warning }}</p>
-      </div>
-    </article>
-
-    <article class="card patients-card">
-      <div class="card-heading">
-        <div><h2>已导入患者</h2><p>{{ patients().length }} 位</p></div>
-        <button type="button" (click)="loadPatients()" [disabled]="patientsLoading()">
-          {{ patientsLoading() ? '刷新中…' : '刷新' }}
-        </button>
-      </div>
-      <p class="error" *ngIf="patientsError()">{{ patientsError() }}</p>
-      <div class="patient-list" *ngIf="patients().length; else noPatients">
-        <article class="patient" *ngFor="let patient of patients()">
-          <label class="select-patient"><input type="checkbox" [disabled]="!!activeConversation() || loading()" [checked]="selectedPatientIds().includes(patient.id)" (change)="togglePatient(patient.id, $any($event.target).checked)" /> 选择</label>
-          <strong>{{ patient.name }}</strong>
-          <span>年龄：{{ age(patient) }}</span>
-          <span>DOX ID：{{ patient.dox_patient_id ?? '—' }}</span>
-          <span>患者编号：{{ patient.patient_number ?? '—' }}</span>
-          <span>病历号：{{ patient.medical_record_number ?? '—' }}</span>
-        </article>
-      </div>
-      <button type="button" class="primary summarize" (click)="summarizeSelected()" [disabled]="!selectedPatientIds().length || loading()">总结所选 {{ selectedPatientIds().length }} 位患者</button>
-      <ng-template #noPatients><p class="empty">尚未导入患者数据。</p></ng-template>
-    </article>
-  </section>
-
-  <section class="card appointments-panel">
-    <div class="card-heading"><h2>患者预约</h2><button (click)="loadAppointments()">刷新预约</button></div>
-    <p class="hint">按开始时间排序 · 显示本机时区 · 同一患者有效预约不可重叠</p>
-    <div class="appointment-list">
-      @for (item of appointments(); track item.id) {
-        <article class="appointment-row">
-          <strong>{{ patientName(item.patient_id) }}</strong>
-          <span>{{ item.starts_at | date:'yyyy-MM-dd HH:mm' }} — {{ item.ends_at | date:'HH:mm' }}</span>
-          <span>{{ item.reason }}</span><span>{{ appointmentLabel(item.status) }}</span>
-          <button (click)="editAppointment(item)" [disabled]="appointmentBusy()">编辑</button>
-          <button (click)="deleteAppointment(item)" [disabled]="appointmentBusy()">删除</button>
-        </article>
-      } @empty { <p class="empty">暂无预约。</p> }
-    </div>
-    <form class="appointment-form" (ngSubmit)="saveAppointment()">
-      <label>患者<select name="patient" [(ngModel)]="appointmentPatient" [disabled]="!!editingAppointment" required>
-        <option value="">请选择</option>@for (patient of patients(); track patient.id) { <option [value]="patient.id">{{ patient.name }}</option> }
-      </select></label>
-      <label>开始<input type="datetime-local" name="start" [(ngModel)]="appointmentStart" required></label>
-      <label>结束<input type="datetime-local" name="end" [(ngModel)]="appointmentEnd" required></label>
-      <label>预约原因<input name="reason" [(ngModel)]="appointmentReason" maxlength="500" required></label>
-      <label>状态<select name="status" [(ngModel)]="appointmentStatus"><option value="scheduled">已预约</option><option value="checked_in">已到诊</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label>
-      <button type="submit" [disabled]="appointmentBusy()">{{ editingAppointment ? '保存修改' : '创建预约' }}</button>
-      @if (editingAppointment) { <button type="button" (click)="resetAppointment()">取消编辑</button> }
-    </form><p class="error" role="alert">{{ appointmentError() }}</p>
-  </section>
-
-  <section class="chat-panel">
-    <div class="agent-toolbar">
-      <h2>Agent 工作台</h2>
-      <label>我的会话<select [ngModel]="activeConversation() ?? ''" (ngModelChange)="openConversation($event)" [disabled]="loading()">
-        <option value="" disabled>选择历史会话</option>
-        @for (conversation of conversations(); track conversation.id) { <option [value]="conversation.id">{{ conversation.created_at | date:'MM-dd HH:mm' }} · {{ conversation.patient_ids.length }} 位患者 · {{ conversation.id.slice(0, 8) }}</option> }
-      </select></label>
-      <button (click)="clear()" [disabled]="loading()">新会话</button>
-      @if (activeConversation(); as id) { <button (click)="openConversation(id)" [disabled]="loading()">刷新会话</button> }
-    </div>
-    <p class="hint scope-hint">患者范围在会话创建时固定。更换患者或操作刚创建的患者，请开启新会话。</p>
-    <div class="agent-status" aria-live="polite"><strong>Agent 状态：</strong>{{ status() }}</div>
-    <details class="trace"><summary>执行轨迹（{{ events().length }}）</summary><ol>@for (event of events(); track $index) { <li>{{ event }}</li> }</ol></details>
-    <p class="error scope-hint" role="alert">{{ agentError() }}</p>
-    @if (canContinue()) { <button (click)="continueRun()" [disabled]="loading()">继续上次中断的执行</button> }
-    @if (review(); as pending) {
-      <section class="approval-panel"><h3>等待人工审批</h3><p>以下操作尚未执行。请检查患者、字段和时间，再逐项批准或拒绝。删除患者会删除关联病历与预约。</p>
-        @for (action of pending.actions; track $index) {
-          <article><strong>{{ action.name }}</strong><pre>{{ action.arguments | json }}</pre>
-            <label>决定<select [(ngModel)]="decisions[$index]" [disabled]="loading()"><option value="reject">拒绝</option><option value="approve">批准执行</option></select></label>
-          </article>
-        }
-        <button class="primary" (click)="submitReview()" [disabled]="loading()">提交决定并继续 Agent</button>
+        <div class="agent-status" aria-live="polite"><span class="tiny-dot"></span>{{ status() }}</div>
+        <details class="trace"><summary>执行轨迹 <span>{{ events().length }}</span></summary><ol>@for (event of events(); track $index) { <li>{{ event }}</li> }</ol>@if (!events().length) { <p class="hint">发送消息后，可在这里查看执行阶段与工具活动。</p> }</details>
+        <p class="error scope-hint" role="alert" *ngIf="agentError()">{{ agentError() }}</p>
+        @if (canContinue()) { <button class="continue-button" (click)="continueRun()" [disabled]="loading()">继续上次中断的执行</button> }
+        @if (review()) { <div class="review-banner"><div><strong>有操作等待你的确认</strong><p>Agent 已暂停，确认后继续执行。</p></div><button class="primary" (click)="reviewVisible.set(true)">查看决策 →</button></div> }
+        <div class="messages" role="log" aria-label="会话消息">
+          @if (!messages().length) {
+            <div class="chat-welcome"><span class="welcome-symbol" aria-hidden="true">✳</span><p class="eyebrow">A LITTLE CLARITY, EVERY DAY</p><h3>让繁杂的记录，<br>变成清晰的下一步。</h3><p>选择患者，与 Copilot 一起梳理病历、查找证据，<br>或安排下一次就诊。</p><div class="suggestions"><button (click)="input.set('Summarize the selected patients records and cite the available evidence.')">梳理患者病历 <span>↗</span></button><button (click)="input.set('Review upcoming appointments for the selected patients.')">查看预约安排 <span>↗</span></button></div><small>记录变更会先交由你确认。</small></div>
+          }
+          <article *ngFor="let message of messages()" [class.user]="message.role === 'user'"><span class="message-author">{{ message.role === 'user' ? '你' : '✳ Copilot' }}</span><p>{{ message.content }}</p><small class="token-usage" *ngIf="message.role === 'assistant' && message.tokenUsage">Token：{{ message.tokenUsage.total_tokens }}（输入 {{ message.tokenUsage.input_tokens }} / 输出 {{ message.tokenUsage.output_tokens }}）</small></article>
+        </div>
+        @if (finalAnswer(); as answer) { <div class="scope-hint"><p *ngIf="answer.evidence_ids.length">证据来源：{{ answer.evidence_ids.join(', ') }}</p><p class="warning" *ngFor="let limitation of answer.limitations">{{ limitation }}</p></div> }
+        <form class="composer" (ngSubmit)="send()">
+          <textarea [ngModel]="input()" (ngModelChange)="input.set($event)" name="message" aria-label="发送给 Copilot 的消息" maxlength="4000" [placeholder]="connected() ? '描述你想完成的工作…' : '点击右上角「连接模型」开始对话'" [disabled]="loading() || !connected() || !!review() || canContinue()"></textarea>
+          <div class="actions"><span class="hint">{{ selectedPatientIds().length ? '已选择 ' + selectedPatientIds().length + ' 位患者' : '未选择患者 · 通用对话' }}</span><button type="submit" [disabled]="loading() || !connected() || !input().trim() || !!review() || canContinue()">{{ loading() ? '处理中…' : '发送消息 ↑' }}</button></div>
+        </form>
       </section>
-    }
-    <div class="messages">
-      <article *ngFor="let message of messages()" [class.user]="message.role === 'user'">
-        <p>{{ message.content }}</p>
-        <small class="token-usage" *ngIf="message.role === 'assistant' && message.tokenUsage">
-          Token 消耗：{{ message.tokenUsage.total_tokens }}
-          （输入 {{ message.tokenUsage.input_tokens }}，输出 {{ message.tokenUsage.output_tokens }}）
-        </small>
-      </article>
+      <aside class="card patients-card">
+        <div class="card-heading"><div><p class="eyebrow">PATIENT CONTEXT</p><h2>患者上下文 <span class="count">{{ patients().length }}</span></h2></div><button (click)="loadPatients()" [disabled]="patientsLoading()">{{ patientsLoading() ? '加载中…' : '刷新' }}</button></div>
+        <label class="search-field"><span class="sr-only">搜索患者</span><input type="search" placeholder="搜索姓名、编号或病历号" [ngModel]="patientSearch()" (ngModelChange)="patientSearch.set($event)" /></label><p class="hint">{{ activeConversation() ? '会话范围已固定，更换患者请新建会话。' : '选择患者，限定本次对话的记录范围。' }}</p><p class="error" role="alert" *ngIf="patientsError()">{{ patientsError() }}</p>
+        <div class="patient-list">
+          @for (patient of filteredPatients(); track patient.id) { <article class="patient" [class.selected]="selectedPatientIds().includes(patient.id)"><label class="select-patient"><input type="checkbox" [disabled]="!!activeConversation() || loading()" [checked]="selectedPatientIds().includes(patient.id)" (change)="togglePatient(patient.id, $any($event.target).checked)" /><span class="avatar">{{ patient.name.slice(0, 1) }}</span><strong>{{ patient.name }}</strong></label><div class="patient-meta"><span>{{ age(patient) }} · DOX {{ patient.dox_patient_id ?? '—' }}</span><span>编号 {{ patient.patient_number ?? '—' }}</span><span>病历号 {{ patient.medical_record_number ?? '—' }}</span></div></article> }
+          @empty { <div class="empty"><span class="empty-symbol">◎</span><strong>{{ patients().length ? '没有匹配的患者' : '等待第一份患者记录' }}</strong><p>{{ patients().length ? '试试其他姓名或编号。' : '前往数据导入，将患者记录带入工作区。' }}</p>@if (!patients().length) { <button (click)="section.set('imports')">导入患者 →</button> }</div> }
+        </div>
+        <div class="patient-footer"><span class="hint">已选择 {{ selectedPatientIds().length }} 位患者</span><button class="primary summarize" (click)="summarizeSelected()" [disabled]="!selectedPatientIds().length || loading() || !connected() || !!review() || canContinue()">总结所选患者 ↗</button></div>
+      </aside>
     </div>
-    @if (finalAnswer(); as answer) {
-      <div class="scope-hint"><p *ngIf="answer.evidence_ids.length">证据来源：{{ answer.evidence_ids.join(', ') }}</p><p class="warning" *ngFor="let limitation of answer.limitations">{{ limitation }}</p></div>
-    }
-
-    <form class="composer" (ngSubmit)="send()">
-      <textarea
-        [ngModel]="input()"
-        (ngModelChange)="input.set($event)"
-        name="message"
-        placeholder="Connect the model to start chatting"
-        [disabled]="loading() || !connected() || !!review() || canContinue()"
-      ></textarea>
-      <div class="actions">
-        <button type="submit" [disabled]="loading() || !connected() || !input().trim() || !!review() || canContinue()">发送</button>
-      </div>
-    </form>
-  </section>
-</main>
+    <section class="card appointments-panel" [hidden]="section() !== 'appointments'">
+      <div class="card-heading"><div><p class="eyebrow">APPOINTMENTS</p><h2>患者预约</h2></div><button (click)="loadAppointments()">刷新预约</button></div><p class="hint">按开始时间排序 · 显示本机时区</p>
+      <div class="appointment-list">@for (item of appointments(); track item.id) { <article class="appointment-row"><div><strong>{{ patientName(item.patient_id) }}</strong><p>{{ item.reason }}</p></div><span>{{ item.starts_at | date:'yyyy-MM-dd HH:mm' }} — {{ item.ends_at | date:'HH:mm' }}</span><span class="status-pill">{{ appointmentLabel(item.status) }}</span><div><button (click)="editAppointment(item)" [disabled]="appointmentBusy()">编辑</button><button class="danger-text" (click)="deleteAppointment(item)" [disabled]="appointmentBusy()">删除</button></div></article> } @empty { <div class="empty"><span class="empty-symbol">▦</span><strong>日程，从下一次就诊开始</strong><p>使用下方表单创建患者预约。</p></div> }</div>
+      <div class="form-heading"><h3>{{ editingAppointment ? '编辑预约' : '创建新预约' }}</h3><p class="hint">同一患者的有效预约不可重叠。</p></div>
+      <form class="appointment-form" (ngSubmit)="saveAppointment()">
+        <label>患者<select name="patient" [(ngModel)]="appointmentPatient" [disabled]="!!editingAppointment" required><option value="">选择患者</option>@for (patient of patients(); track patient.id) { <option [value]="patient.id">{{ patient.name }}</option> }</select></label>
+        <label>开始时间<input type="datetime-local" name="start" [(ngModel)]="appointmentStart" required></label><label>结束时间<input type="datetime-local" name="end" [(ngModel)]="appointmentEnd" required></label><label>预约原因<input name="reason" [(ngModel)]="appointmentReason" maxlength="500" placeholder="填写就诊事项" required></label><label>状态<select name="status" [(ngModel)]="appointmentStatus"><option value="scheduled">已预约</option><option value="checked_in">已到诊</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><div class="form-actions"><button type="submit" [disabled]="appointmentBusy()">{{ appointmentBusy() ? '保存中…' : editingAppointment ? '保存修改' : '创建预约' }}</button>@if (editingAppointment) { <button type="button" (click)="resetAppointment()">取消编辑</button> }</div>
+      </form><p class="error" role="alert" *ngIf="appointmentError()">{{ appointmentError() }}</p>
+    </section>
+    <section class="import-page" [hidden]="section() !== 'imports'">
+      <div class="import-intro"><p class="eyebrow">CONNECTED KNOWLEDGE</p><h2>把分散的信息，<br>带到一起。</h2><p>预览数据源，导入原始记录，<br>为检索与会话准备患者上下文。</p><div class="import-steps"><span>01 / 预览数据源</span><span>02 / 选择导入数量</span><span>03 / 在工作台选择患者</span></div></div>
+      <article class="card import-card"><div class="card-heading"><div><p class="eyebrow">DATA SOURCE</p><h2>DOX 数据导入</h2></div><button (click)="previewDox()" [disabled]="previewLoading() || importLoading()">{{ previewLoading() ? '预览中…' : '预览数据源' }}</button></div><p class="hint">导入患者文本病历与临床数据。</p><ng-container *ngIf="doxPreview() as preview"><p class="connection" [class.ok]="preview.connected">{{ preview.connected ? '● DOX 数据源已连接' : '○ DOX 数据源未连接' }}</p><dl class="table-counts" *ngIf="preview.connected"><div *ngFor="let table of preview.tables | keyvalue"><dt>{{ table.key }}</dt><dd>{{ table.value ?? '不可用' }}</dd></div></dl><p class="warning" *ngFor="let warning of preview.warnings">{{ warning }}</p></ng-container><div class="import-controls"><label>导入患者数<input type="number" min="1" max="500" [ngModel]="importPatientLimit()" (ngModelChange)="importPatientLimit.set($event)" /></label><button class="primary" (click)="importDox()" [disabled]="importLoading()">{{ importLoading() ? '正在导入…' : '开始导入 →' }}</button></div><p class="hint">导入保留原文；Agent 使用患者替代标识和 PII 中间件。未知敏感信息仍可能需要人工处理。</p><p class="error" role="alert" *ngIf="importError()">{{ importError() }}</p><div class="result" *ngIf="importResult() as result"><strong>导入 {{ result.status }}</strong><span>患者 {{ result.patients_imported }}/{{ result.patients_requested }} · 笔记 {{ result.notes_imported }} · 临床事实 {{ result.clinical_facts_imported }}</span><p class="warning" *ngFor="let warning of result.warnings">{{ warning }}</p></div></article>
+    </section>
+    <footer class="workspace-footer"><span>由你决策 · 由 Copilot 协助</span><span>教育演示 / 非临床诊断系统</span></footer>
+  </main>
+</div>
+<!-- 原始参数完整呈现，决定仍绑定服务端 interrupt_id；稍后处理不会提交任何决定。 -->
+<dialog #approvalDialog class="approval-dialog" aria-labelledby="approval-title" aria-describedby="approval-description" (cancel)="dismissReview($event)">
+  @if (review(); as pending) {
+    <header class="modal-heading"><div><p class="eyebrow">HUMAN IN THE LOOP</p><h2 id="approval-title">下一步，由你确认。</h2></div><button type="button" autofocus aria-label="稍后处理并关闭弹窗" (click)="dismissReview()" [disabled]="loading()">✕</button></header><p id="approval-description" class="modal-description">Agent 提议执行以下 {{ pending.actions.length }} 项操作，目前尚未执行。请核对患者、字段和时间，再逐项选择。</p>
+    <div class="approval-actions">
+      @for (action of pending.actions; track $index) { <article class="review-action"><div class="card-heading"><strong><span class="action-number">{{ $index + 1 }}</span>{{ action.name }}</strong><span class="pending-tag">待确认</span></div><p *ngIf="action.description">{{ action.description }}</p><pre>{{ action.arguments | json }}</pre><fieldset [disabled]="loading()"><legend>此项操作的决定</legend><label [class.chosen]="decisions[$index] === 'reject'"><input type="radio" [name]="'decision-' + $index" value="reject" [(ngModel)]="decisions[$index]">拒绝操作</label><label [class.chosen]="decisions[$index] === 'approve'"><input type="radio" [name]="'decision-' + $index" value="approve" [(ngModel)]="decisions[$index]">批准执行</label></fieldset></article> }
+    </div>
+    <footer class="modal-footer"><p class="warning">涉及删除患者时，其关联病历与预约也会删除。</p><p class="error" role="alert" *ngIf="agentError()">{{ agentError() }}</p><div><button (click)="dismissReview()" [disabled]="loading()">稍后处理</button><button class="primary" (click)="submitReview()" [disabled]="loading()">{{ loading() ? '正在提交…' : '提交决定并继续' }}</button></div></footer>
+  }
+</dialog>

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, effect, ElementRef, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, firstValueFrom } from 'rxjs';
 import { DentalAiApiService } from '../../core/api/dentalai-api.service';
@@ -14,11 +14,36 @@ import { Appointment, AppointmentInput, Conversation, PendingReview, AgentEvent,
   styleUrl: './workbench.component.scss'
 })
 export class WorkbenchComponent implements OnInit, OnDestroy {
+  // 页面切换只改变展示，保留正在运行的 SSE、会话和未提交表单。
+  readonly section = signal<'agent' | 'appointments' | 'imports'>('agent');
+  readonly patientSearch = signal('');
+  readonly filteredPatients = computed(() => {
+    const query = this.patientSearch().trim().toLowerCase();
+    return this.patients().filter(patient =>
+      [patient.name, patient.patient_number, patient.medical_record_number, patient.dox_patient_id]
+        .some(value => value?.toLowerCase().includes(query)));
+  });
+  readonly reviewVisible = signal(false);
+  private readonly approvalDialog = viewChild<ElementRef<HTMLDialogElement>>('approvalDialog');
+  // showModal 提供焦点约束和背景隔离；业务审批状态仍以服务端 checkpoint 为准。
+  private readonly syncApprovalDialog = effect(() => {
+    const dialog = this.approvalDialog()?.nativeElement;
+    if (!dialog) return;
+    if (this.review() && this.reviewVisible()) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) dialog.close();
+  });
+
+  /** Escape 和稍后处理都只关闭展示，不向服务端发送审批决定。 */
+  dismissReview(event?: Event): void {
+    event?.preventDefault();
+    if (!this.loading()) this.reviewVisible.set(false);
+  }
   private readonly maxMessageChars = 4000;
   // 历史由服务端 checkpoint 持久化；浏览器仅保留当前展示内容。
   readonly messages = signal<ChatMessage[]>([]);
-  readonly input = signal('Explain this project in one minute for an AI Engineer interview.');
-  readonly connectionLabel = signal('Connect model');
+  readonly input = signal('');
+  readonly connectionLabel = signal('连接模型');
   readonly connected = signal(false);
   readonly connecting = signal(false);
   readonly loading = signal(false);
@@ -114,6 +139,7 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
   }
   private setReview(review: PendingReview | null): void {
     this.review.set(review);
+    this.reviewVisible.set(!!review);
     // 默认拒绝：每个动作必须由用户主动选择批准，不能批量默认同意。
     this.decisions = review?.actions.map(() => 'reject') ?? [];
   }
@@ -207,15 +233,15 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
     if (this.connecting() || this.connected()) return;
 
     this.connecting.set(true);
-    this.connectionLabel.set('Connecting...');
+    this.connectionLabel.set('连接中…');
     this.api.connectChat()
       .pipe(finalize(() => this.connecting.set(false)))
       .subscribe({
         next: response => {
           this.connected.set(response.connected);
-          this.connectionLabel.set(response.connected ? 'Model connected' : 'Connection unavailable');
+          this.connectionLabel.set(response.connected ? (response.mock ? 'Mock 模型已连接' : '模型已连接') : '连接不可用 · 重试');
         },
-        error: () => this.connectionLabel.set('Connection unavailable')
+        error: () => this.connectionLabel.set('连接失败 · 重试')
       });
   }
 

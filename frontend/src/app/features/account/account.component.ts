@@ -10,10 +10,7 @@ import { WorkbenchComponent } from '../workbench/workbench.component';
 @Component({
   selector: 'app-account', standalone: true, imports: [CommonModule, FormsModule, WorkbenchComponent],
   templateUrl: './account.component.html',
-  styles: [`:host{display:block} .account{max-width:600px;margin:2rem auto;padding:2rem;background:white;border:1px solid #dce5ef;border-radius:16px}
-    form{display:grid;gap:12px}label{display:grid;gap:6px}input,button{padding:10px;border:1px solid #bccddd;border-radius:8px}
-    .bar{padding:12px 24px;background:#123650;color:white;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-    .bar span{flex:1}.error{color:#b42318}.notice{color:#236848}`]
+  styleUrl: './account.component.scss'
 })
 export class AccountComponent implements OnInit {
   readonly session = inject(SessionState);

@@ -1,229 +1,1025 @@
+// 主区优先容纳对话，侧栏提供患者上下文；窄屏按阅读顺序折叠为单列。
 :host {
   display: block;
-  min-height: 100vh;
-  background: #f5f7fb;
-  color: #172033;
-  font-family: Inter, Segoe UI, Arial, sans-serif;
 }
-
+.workspace {
+  display: grid;
+  grid-template-columns: 218px minmax(0, 1fr);
+  min-height: calc(100vh - 56px);
+}
+.sidebar {
+  padding: 32px 20px 20px;
+  background: #f0f2ed;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -.8px;
+}
+.brand small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.brand-icon {
+  background: var(--accent);
+  color: white;
+  border-radius: 12px;
+  padding: 8px 12px;
+  position: relative;
+  font-size: 27px;
+}
+.brand-icon span {
+  font-size: 16px;
+  position: absolute;
+  right: 2px;
+  top: 0;
+  color: #c4dec2;
+}
+.nav-caption {
+  margin: 49px 12px 14px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+nav {
+  display: grid;
+  gap: 7px;
+}
+nav button {
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 13px;
+  color: #5a6862;
+}
+nav button > span:first-child {
+  font-size: 20px;
+  width: 22px;
+}
+nav button.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 5px 14px #244f4012;
+}
+.nav-arrow, .nav-count {
+  margin-left: auto;
+  font-size: 12px;
+}
+.sidebar-note {
+  margin-top: auto;
+  padding: 64px 10px 25px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sidebar-note p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.9;
+  margin-top: 12px;
+}
+.sidebar-footer {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.8;
+}
+.sidebar-footer small {
+  display: block;
+  font-size: 9px;
+}
 .shell {
-  max-width: 1040px;
+  min-width: 0;
+  padding: 0 36px;
+  max-width: 1760px;
+  width: 100%;
   margin: 0 auto;
-  padding: 24px;
 }
-
 .topbar {
+  min-height: 76px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.breadcrumb {
+  font-size: 12px;
+  color: var(--muted);
+}
+.breadcrumb span {
+  margin: 0 14px;
+  color: #acb4ae;
+}
+.model-connect {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tiny-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #80978b;
+  flex-shrink: 0;
+}
+.model-connect.is-connected {
+  color: var(--accent);
+  background: #eaf2e9;
+  border-color: #d6e4d6;
+}
+.is-connected .tiny-dot {
+  background: #378763;
+}
+.page-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 18px;
+  padding: 33px 0 27px;
 }
-
-h1,
-h2,
-p,
-dl {
+.eyebrow {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+h1 {
+  font-size: clamp(23px, 2.2vw, 32px);
+  font-weight: 600;
+  letter-spacing: -1px;
+  margin: 0 0 10px;
+}
+h2 {
+  font-size: 17px;
+  font-weight: 600;
   margin: 0;
 }
-
-h1 {
-  font-size: 28px;
+h3 {
+  font-weight: 600;
 }
-
-h2 {
-  font-size: 18px;
+.page-heading > div > p:last-child {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
 }
-
-.data-grid {
+.workspace-tag {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+.overview-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
-  gap: 18px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff80;
+  margin-bottom: 24px;
+  padding: 17px 0;
 }
-
+.overview-strip > div {
+  padding: 0 23px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.overview-strip > div:last-child {
+  border: 0;
+}
+.overview-strip span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.overview-strip strong {
+  font-size: 25px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.overview-strip small {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.agent-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: stretch;
+}
+.card, .chat-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 4px 20px #253a2f03;
+  min-width: 0;
+}
 .card {
-  border: 1px solid #d9e2ef;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
+  padding: 22px;
 }
-
-.card-heading,
-.import-controls {
+.card-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
-
-.card-heading p,
-.hint,
-.empty {
-  color: #5d6a7e;
-  font-size: 14px;
-  margin-top: 4px;
+.card-heading button {
+  font-size: 12px;
+  padding: 7px 10px;
 }
-
-.connection,
-.result {
-  margin-top: 14px;
-  color: #8a5b00;
+.card-heading .eyebrow {
+  font-size: 9px;
+  margin-bottom: 7px;
 }
-
-.connection.ok { color: #157347; }
-
-.table-counts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
 }
-
-.table-counts div,
-.patient {
-  border: 1px solid #e4eaf3;
-  border-radius: 6px;
+.count {
+  font-size: 11px;
+  border-radius: 5px;
+  background: #eef1ec;
+  padding: 3px 6px;
+  margin-left: 5px;
+}
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: max(590px, calc(100dvh - 420px));
+}
+.agent-toolbar {
+  padding: 19px 22px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+.agent-toolbar button, .agent-toolbar select {
+  font-size: 11px;
   padding: 8px;
 }
-
-.table-counts dt { font-size: 12px; color: #5d6a7e; }
-.table-counts dd { margin: 3px 0 0; font-weight: 700; }
-
-.import-controls { margin-top: 16px; justify-content: flex-start; }
-.import-controls label { display: grid; gap: 4px; font-size: 14px; }
-input { width: 100px; border: 1px solid #c5d1e2; border-radius: 6px; padding: 8px; font: inherit; }
-.error, .warning { color: #a23c00; font-size: 13px; margin-top: 8px; }
-.result { display: grid; gap: 4px; color: #172033; font-size: 14px; }
-.patient-list { display: grid; gap: 8px; max-height: 290px; overflow: auto; margin-top: 12px; }
-.patient { display: grid; gap: 3px; background: #f7faff; font-size: 13px; }
-.patient strong { font-size: 15px; }
-
-.chat-panel {
-  display: grid;
-  grid-template-rows: auto;
-  min-height: 480px;
-  background: #fff;
-  border: 1px solid #d9e2ef;
-  border-radius: 8px;
-  overflow: hidden;
+.agent-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-right: auto;
 }
-
-// 预约、审批和执行轨迹各自保留可读布局，小屏自动换行，不挤压审批参数。
-.appointments-panel { margin-bottom: 18px; }
-.appointment-list { max-height: 360px; overflow: auto; margin: 12px 0; }
-.appointment-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: none; margin-bottom: 8px; }
-.appointment-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
-.appointment-form label { display: grid; gap: 5px; }
-.appointment-form input { width: auto; }
-select { padding: 8px; border: 1px solid #c5d1e2; border-radius: 6px; max-width: 100%; font: inherit; }
-.agent-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px; }
-.scope-hint { margin: 0 16px 12px; }
-.agent-status { padding: 12px 16px; background: #eaf4f8; }
-.trace { margin: 12px 16px; font-size: 13px; }
-.approval-panel { margin: 16px; padding: 16px; border: 2px solid #ce942b; background: #fff8e8; border-radius: 8px; }
-.approval-panel article { margin: 12px 0; max-width: none; }
-.approval-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-
+.agent-title .hint {
+  margin: 3px 0 0;
+  font-size: 10px;
+}
+.ai-mark {
+  color: var(--accent);
+  background: #eaf0e6;
+  border-radius: 10px;
+  padding: 5px 10px;
+  font-size: 25px;
+}
+.history-select {
+  max-width: 160px;
+}
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  background: #f7f9f5;
+  padding: 10px 22px;
+  color: #54715d;
+  overflow-wrap: anywhere;
+}
+.trace {
+  font-size: 11px;
+  padding: 12px 22px;
+  border-bottom: 1px solid #eef0eb;
+  color: var(--muted);
+}
+.trace summary {
+  cursor: pointer;
+}
+.trace summary span {
+  float: right;
+}
+.trace ol {
+  max-height: 160px;
+  overflow: auto;
+  padding-left: 20px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px;
+  gap: 20px;
+  padding: 24px;
+  flex: 1;
+  max-height: 600px;
   overflow: auto;
+  min-height: 100px;
 }
-
-article {
-  max-width: 780px;
-  border: 1px solid #e4eaf3;
-  border-radius: 8px;
-  padding: 12px 14px;
-  align-self: flex-start;
-  background: #f7faff;
+.chat-welcome {
+  text-align: center;
+  margin: auto;
+  padding: 0;
 }
-
-article.user {
-  align-self: flex-end;
-  background: #174ea6;
-  border-color: #174ea6;
-  color: #fff;
-}
-
-article p {
-  white-space: pre-wrap;
-  line-height: 1.55;
-}
-
-.token-usage {
+.welcome-symbol {
+  font-size: 32px;
+  color: #739077;
   display: block;
-  margin-top: 8px;
-  color: #5d6a7e;
+  margin-bottom: 10px;
+}
+.chat-welcome .eyebrow {
+  font-size: 9px;
+}
+.chat-welcome h3 {
+  font-size: clamp(23px, 1.8vw, 26px);
+  line-height: 1.5;
+  letter-spacing: -.7px;
+  margin: 8px 0;
+}
+.chat-welcome > p:not(.eyebrow) {
+  color: var(--muted);
   font-size: 12px;
+  line-height: 1.9;
+  margin: 8px 0;
 }
-
+.chat-welcome small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin: 14px 0 10px;
+}
+.suggestions button {
+  font-size: 11px;
+  background: #fbfcf9;
+  padding: 11px 14px;
+}
+.suggestions span {
+  margin-left: 18px;
+  color: #8a9b87;
+}
+.messages article {
+  max-width: 93%;
+  align-self: flex-start;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.message-author {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 9px;
+}
+.messages article p {
+  white-space: pre-wrap;
+  line-height: 1.85;
+  margin: 0;
+}
+.messages article.user {
+  background: #eff3ec;
+  padding: 14px 18px;
+  border-radius: 12px 12px 2px 12px;
+  align-self: flex-end;
+}
+.token-usage {
+  font-size: 10px;
+  color: var(--muted);
+  display: block;
+  margin-top: 10px;
+}
 .composer {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border-top: 1px solid #d9e2ef;
-  background: #fbfcff;
-}
-
-textarea {
-  width: 100%;
-  min-height: 96px;
-  resize: vertical;
-  box-sizing: border-box;
-  border: 1px solid #c5d1e2;
-  border-radius: 8px;
+  margin: 0 20px 20px;
+  border: 1px solid #dbe2d7;
+  border-radius: 12px;
+  background: #fbfcfa;
   padding: 12px;
-  font: inherit;
 }
-
+.composer:focus-within {
+  border-color: #8da88e;
+  box-shadow: 0 0 0 3px #355d4010;
+}
+.composer textarea {
+  border: 0;
+  background: transparent;
+  min-height: 70px;
+  padding: 6px;
+  resize: vertical;
+  font-size: 13px;
+}
+.composer textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 10px;
 }
-
-button {
-  min-width: 84px;
-  border: 1px solid #c5d1e2;
-  background: #fff;
-  border-radius: 6px;
-  padding: 8px 12px;
+.actions button {
+  font-size: 12px;
+}
+.actions .hint {
+  font-size: 10px;
+}
+.patients-card {
+  display: flex;
+  flex-direction: column;
+}
+.search-field {
+  margin: 10px 0 3px;
+}
+.search-field input {
+  font-size: 11px;
+  background: #f9faf7;
+}
+.patient-list {
+  flex: 1;
+  max-height: 460px;
+  overflow: auto;
+  margin-top: 12px;
+}
+.patient {
+  border: 1px solid transparent;
+  border-bottom-color: #edf0e9;
+  padding: 15px 8px;
+  border-radius: 8px;
+}
+.patient.selected {
+  background: #f0f5eb;
+  border-color: #dbe6d3;
+  margin-bottom: 6px;
+}
+.select-patient {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.avatar {
+  background: #e8ede3;
+  color: #64745d;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.patient-meta {
+  padding: 8px 0 0 26px;
+  font-size: 10px;
+  color: var(--muted);
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.patient-footer {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 18px;
+}
+.summarize {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.empty {
+  padding: 38px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.empty strong {
+  display: block;
+  font-weight: 500;
+  color: var(--ink);
+}
+.empty p {
+  line-height: 1.8;
+}
+.empty-symbol {
+  font-size: 30px;
+  display: block;
+  color: #95a08b;
+  margin-bottom: 18px;
+}
+.empty button {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.scope-hint {
+  margin: 12px 22px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.continue-button {
+  margin: 12px 22px;
+}
+.review-banner {
+  background: #fcf4e6;
+  border: 1px solid #eaddbe;
+  border-radius: 9px;
+  padding: 14px;
+  margin: 16px 20px 0;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.review-banner p {
+  font-size: 11px;
+  color: #8a7449;
+  margin-bottom: 0;
+}
+.review-banner button {
+  white-space: nowrap;
+  font-size: 11px;
+}
+.appointment-list {
+  max-height: 460px;
+  overflow: auto;
+  margin: 20px 0;
+}
+.appointment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+  font-size: 12px;
+}
+.appointment-row > div:first-child {
+  flex: 1;
+  min-width: 140px;
+}
+.appointment-row p {
+  color: var(--muted);
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.appointment-row button {
+  font-size: 11px;
+  margin-right: 6px;
+}
+.status-pill {
+  border-radius: 16px;
+  padding: 5px 10px;
+  background: #eef3e9;
+  color: #526a45;
+  font-size: 10px;
+}
+.form-heading {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.form-heading h3 {
+  margin-bottom: 6px;
+  font-size: 16px;
+}
+.appointment-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+.appointment-form label, .import-controls label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.form-actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+.import-page {
+  display: grid;
+  grid-template-columns: .8fr 1.2fr;
+  gap: 36px;
+  align-items: start;
+}
+.import-intro {
+  padding: 35px 20px;
+}
+.import-intro h2 {
+  font-size: 32px;
+  line-height: 1.7;
+  margin: 18px 0;
+}
+.import-intro > p:not(.eyebrow) {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.import-steps {
+  display: grid;
+  gap: 20px;
+  font-size: 12px;
+  margin-top: 40px;
+  color: var(--accent);
+}
+.import-card {
+  padding: 30px;
+}
+.import-controls {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  margin: 30px 0;
+}
+.import-controls input {
+  max-width: 140px;
+}
+.connection {
+  font-size: 12px;
+  color: #927234;
+  margin-top: 24px;
+}
+.connection.ok {
+  color: var(--accent);
+}
+.table-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.table-counts > div {
+  padding: 12px;
+  background: #f4f6ef;
+  border-radius: 8px;
+}
+.table-counts dt {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.table-counts dd {
+  margin: 8px 0 0;
+  font-size: 20px;
+}
+.result {
+  display: grid;
+  gap: 9px;
+  font-size: 12px;
+  background: #f0f5eb;
+  padding: 15px;
+  border-radius: 9px;
+}
+.workspace-footer {
+  padding: 22px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10px;
+  color: #7f887d;
+}
+// 弹窗保留完整参数与独立滚动空间，底部按钮可见；backdrop 隔离背景操作。
+.approval-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid #d9dfd2;
+  border-radius: 20px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 28px 100px #10291d40;
+  overflow: auto;
+}
+.approval-dialog::backdrop {
+  background: #172c2566;
+  backdrop-filter: blur(5px);
+}
+.modal-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 28px 28px 0;
+}
+.modal-heading h2 {
+  font-size: 25px;
+}
+.modal-heading button {
+  align-self: start;
+}
+.modal-description {
+  padding: 0 28px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.approval-actions {
+  padding: 8px 28px;
+}
+.review-action {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.review-action strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.action-number {
+  margin-right: 10px;
+  color: var(--muted);
+}
+.pending-tag {
+  color: #916b28;
+  background: #f8efda;
+  border-radius: 14px;
+  padding: 4px 9px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.review-action p {
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.review-action pre {
+  font-size: 12px;
+  background: #f3f5ef;
+  padding: 16px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.review-action fieldset {
+  border: 0;
+  padding: 0;
+  margin: 18px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.review-action legend {
+  font-size: 11px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+.review-action label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
   cursor: pointer;
 }
-
-button[type="submit"] {
-  background: #174ea6;
-  border-color: #174ea6;
-  color: #fff;
+.review-action label.chosen {
+  border-color: #7e9b77;
+  background: #eff5e9;
 }
-
-button.primary {
-  background: #174ea6;
-  border-color: #174ea6;
-  color: #fff;
+.modal-footer {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 28px 24px;
+  background: #fffefa;
+  border-top: 1px solid var(--line);
 }
-
-button:disabled {
-  color: #98a2b3;
-  background: #eef1f6;
-  border-color: #d5dce8;
-  cursor: not-allowed;
+.modal-footer > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
 }
-
-@media (max-width: 720px) {
+@media (min-width: 1600px) {
+  .agent-layout {
+    grid-template-columns: minmax(0, 1fr) 350px;
+  }
+  .chat-panel {
+    height: max(650px, calc(100dvh - 420px));
+  }
+}
+@media (max-width: 1200px) {
+  .workspace {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding: 28px 12px 16px;
+  }
   .shell {
-    padding: 14px;
+    padding: 0 22px;
   }
-
+  .agent-layout {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+  .workspace-tag {
+    display: none;
+  }
+  .overview-strip > div {
+    padding: 0 15px;
+    flex-wrap: wrap;
+  }
+  .patients-card {
+    padding: 16px;
+  }
+}
+@media (max-width: 960px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    padding: 14px 22px;
+    flex-direction: row;
+    align-items: center;
+    gap: 24px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    font-size: 18px;
+  }
+  .brand-icon {
+    font-size: 21px;
+  }
+  .nav-caption, .sidebar-note, .sidebar-footer {
+    display: none;
+  }
+  nav {
+    display: flex;
+    margin-left: auto;
+  }
+  nav button {
+    font-size: 12px;
+    gap: 6px;
+  }
+  .nav-arrow, .nav-count {
+    display: none;
+  }
+  .agent-layout {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+  .import-page {
+    gap: 10px;
+  }
+  .appointment-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .sidebar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+    padding: 18px;
+  }
+  .brand {
+    justify-content: center;
+  }
+  nav {
+    margin: 0;
+    justify-content: center;
+  }
+  nav button {
+    padding: 10px;
+  }
+  .shell {
+    padding: 0 16px;
+  }
   .topbar {
-    display: grid;
+    min-height: 65px;
   }
-
-  .data-grid { grid-template-columns: 1fr; }
-  .table-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
+  .breadcrumb {
+    font-size: 10px;
+  }
+  .breadcrumb span {
+    margin: 0 5px;
+  }
+  .model-connect {
+    padding: 8px;
+    font-size: 10px;
+  }
+  .page-heading {
+    padding: 25px 0;
+  }
+  h1 {
+    font-size: 23px;
+  }
+  .page-heading > div > p:last-child {
+    font-size: 11px;
+  }
+  .overview-strip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px 0;
+  }
+  .overview-strip > div:nth-child(2) {
+    border: 0;
+  }
+  .agent-layout {
+    grid-template-columns: 1fr;
+  }
+  .chat-panel {
+    min-height: 600px;
+    height: auto;
+  }
+  .patients-card {
+    grid-row: 1;
+  }
+  .patient-list {
+    max-height: 220px;
+  }
+  .patient-list .empty {
+    padding: 15px;
+  }
+  .patient-list .empty-symbol {
+    display: none;
+  }
+  .agent-toolbar {
+    padding: 16px;
+  }
+  .agent-title {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+  .history-select {
+    max-width: 160px;
+  }
+  .messages {
+    padding: 18px;
+  }
+  .chat-welcome h3 {
+    font-size: 24px;
+  }
+  .composer {
+    margin: 0 12px 12px;
+  }
+  .import-page, .appointment-form {
+    grid-template-columns: 1fr;
+  }
+  .import-intro {
+    padding: 20px 4px;
+  }
+  .import-intro h2 {
+    font-size: 28px;
+  }
+  .import-steps {
+    margin-top: 24px;
+  }
+  .import-card {
+    padding: 20px;
+  }
+  .workspace-footer {
+    font-size: 9px;
+  }
+  .modal-heading {
+    padding: 22px 18px 0;
+  }
+  .modal-heading h2 {
+    font-size: 20px;
+  }
+  .modal-heading button {
+    padding: 8px 10px;
+  }
+  .modal-description, .approval-actions {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .modal-footer {
+    padding: 12px 18px 18px;
+  }
+  .review-banner {
+    flex-wrap: wrap;
+  }
 }
