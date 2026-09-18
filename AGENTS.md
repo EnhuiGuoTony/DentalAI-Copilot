@@ -52,6 +52,35 @@ Learning is a primary goal of this project. When adding or modifying code, inclu
 - `backend/app/db/`: SQLAlchemy models and database setup; `backend/db-init/` initializes PostgreSQL + pgvector.
 - `docs/architecture.md`: intended system design and safety boundaries.
 
+## Authentication and shared-clinic authorization
+
+- This is one shared clinic workspace: authenticated members share patient records and appointments. Do not silently introduce per-user patient ownership or describe this as multi-tenant isolation.
+- Accounts support username/password registration, login, profile editing, password changes and logout without email or phone verification. Registration currently grants clinic membership; invitation-only enrollment and roles are future deployment work.
+- Protect every business API, including imports, retrieval, model configuration checks and streaming endpoints, using the server-side `current_user` dependency. Only health, API documentation and authentication entry points are public.
+- Store Argon2 password hashes and hashed opaque session tokens. Keep login cookies HttpOnly, check request origins for browser writes, and revoke all sessions on password changes. Enable secure cookies for HTTPS deployments.
+- Conversation reads, new turns and approval resumes must verify the authenticated owner. A thread UUID is not an authorization credential. Never accept user IDs or trusted conversation history from model/client input.
+
+## Agent execution, memory and human approval
+
+- Use LangChain `create_agent` with a persistent LangGraph `PostgresSaver` for conversational short-term memory. Do not replace this with browser-supplied history or a new in-memory saver per request. Cross-conversation long-term semantic memory is not implemented.
+- Keep final answers and mutation inputs in Pydantic schemas. `ToolStrategy(AgentAnswer)` validates final output; discriminated operation models define patient CRUD, appointment CRUD and note additions/deletions.
+- Every Agent write must pass through the `change_records` tool and `HumanInTheLoopMiddleware`. Never add an alternative write tool or route that lets model-generated writes bypass approval.
+- Persist pending actions in checkpoints. The frontend displays the exact proposed arguments and submits approve/reject decisions bound to the interrupt ID. Keep user ownership, action count and stale-interrupt checks on the server; do not treat a chat message saying "approved" as authorization.
+- Use `records_service` for business mutations. Keep selected-patient scoping, record-version checks, appointment conflict detection, vector cleanup and transaction boundaries there. Patient deletion removes its chart, appointments, facts and vectors.
+- Commit a mutation and its `MutationReceipt` together. Check receipts using conversation ID and framework-injected tool-call ID before replaying a tool. Maintain per-conversation database locking to prevent concurrent resumes across API workers.
+- Use isolated database sessions inside tools because tool execution can occur on worker threads. Do not share the request's SQLAlchemy Session with parallel tool calls.
+- Expose observable execution stages, tool activity, pending approval, validated results and errors through SSE. Do not stream hidden reasoning or unvalidated structured-output fragments. A disconnected client does not imply already committed writes were rolled back.
+- Preserve the distinction between known-patient identity substitution and built-in `PIIMiddleware` coverage. Mapping snapshots are sensitive, unknown identifiers may escape detection, and checkpoints are not an anonymized dataset. Do not claim comprehensive medical de-identification.
+- Keep the mock model explicit: it exercises persistence and structured responses but does not interpret or execute natural-language record modifications.
+
+## Validation for workflow changes
+
+- Cover authentication bypass, session revocation, conversation ownership, approval/rejection, stale approvals, write replay, record-version conflicts and patient-scoped operations with focused tests.
+- PostgreSQL integration tests use `TEST_DATABASE_URL` and create an isolated random schema. Never run destructive test cleanup against application schemas or imported patient data.
+- Appointment inputs require timezone-aware timestamps and positive durations. The UI displays local time; the API stores timezone-aware values. Check overlapping active appointments while holding the patient lock.
+- Adding notes must also index them transactionally. Deleting notes or patients must remove their corresponding vectors; re-indexing notes must not accumulate duplicate chunks.
+- Keep the frontend contracts in sync with Pydantic models, including SSE events and approval decisions. Run `npm run build` after frontend changes.
+
 ## Local development
 
 - Start the stack: `docker-compose up --build` (web: `http://localhost:4200`, API: `http://localhost:8000`).

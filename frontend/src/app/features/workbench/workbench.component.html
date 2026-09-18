@@ -39,7 +39,7 @@
           {{ importLoading() ? '正在导入…' : '开始导入' }}
         </button>
       </div>
-      <p class="hint">导入保留原始文本；仅发送给大模型时隐藏姓名、出生日期和地址。</p>
+      <p class="hint">导入保留原文；Agent 使用患者替代标识和 PII 中间件。未知敏感信息仍可能需要人工处理。</p>
       <p class="error" *ngIf="importError()">{{ importError() }}</p>
       <div class="result" *ngIf="importResult() as result">
         <strong>导入{{ result.status }}</strong>
@@ -58,7 +58,7 @@
       <p class="error" *ngIf="patientsError()">{{ patientsError() }}</p>
       <div class="patient-list" *ngIf="patients().length; else noPatients">
         <article class="patient" *ngFor="let patient of patients()">
-          <label class="select-patient"><input type="checkbox" [checked]="selectedPatientIds().includes(patient.id)" (change)="togglePatient(patient.id, $any($event.target).checked)" /> 选择</label>
+          <label class="select-patient"><input type="checkbox" [disabled]="!!activeConversation() || loading()" [checked]="selectedPatientIds().includes(patient.id)" (change)="togglePatient(patient.id, $any($event.target).checked)" /> 选择</label>
           <strong>{{ patient.name }}</strong>
           <span>年龄：{{ age(patient) }}</span>
           <span>DOX ID：{{ patient.dox_patient_id ?? '—' }}</span>
@@ -71,7 +71,58 @@
     </article>
   </section>
 
+  <section class="card appointments-panel">
+    <div class="card-heading"><h2>患者预约</h2><button (click)="loadAppointments()">刷新预约</button></div>
+    <p class="hint">按开始时间排序 · 显示本机时区 · 同一患者有效预约不可重叠</p>
+    <div class="appointment-list">
+      @for (item of appointments(); track item.id) {
+        <article class="appointment-row">
+          <strong>{{ patientName(item.patient_id) }}</strong>
+          <span>{{ item.starts_at | date:'yyyy-MM-dd HH:mm' }} — {{ item.ends_at | date:'HH:mm' }}</span>
+          <span>{{ item.reason }}</span><span>{{ appointmentLabel(item.status) }}</span>
+          <button (click)="editAppointment(item)" [disabled]="appointmentBusy()">编辑</button>
+          <button (click)="deleteAppointment(item)" [disabled]="appointmentBusy()">删除</button>
+        </article>
+      } @empty { <p class="empty">暂无预约。</p> }
+    </div>
+    <form class="appointment-form" (ngSubmit)="saveAppointment()">
+      <label>患者<select name="patient" [(ngModel)]="appointmentPatient" [disabled]="!!editingAppointment" required>
+        <option value="">请选择</option>@for (patient of patients(); track patient.id) { <option [value]="patient.id">{{ patient.name }}</option> }
+      </select></label>
+      <label>开始<input type="datetime-local" name="start" [(ngModel)]="appointmentStart" required></label>
+      <label>结束<input type="datetime-local" name="end" [(ngModel)]="appointmentEnd" required></label>
+      <label>预约原因<input name="reason" [(ngModel)]="appointmentReason" maxlength="500" required></label>
+      <label>状态<select name="status" [(ngModel)]="appointmentStatus"><option value="scheduled">已预约</option><option value="checked_in">已到诊</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label>
+      <button type="submit" [disabled]="appointmentBusy()">{{ editingAppointment ? '保存修改' : '创建预约' }}</button>
+      @if (editingAppointment) { <button type="button" (click)="resetAppointment()">取消编辑</button> }
+    </form><p class="error" role="alert">{{ appointmentError() }}</p>
+  </section>
+
   <section class="chat-panel">
+    <div class="agent-toolbar">
+      <h2>Agent 工作台</h2>
+      <label>我的会话<select [ngModel]="activeConversation() ?? ''" (ngModelChange)="openConversation($event)" [disabled]="loading()">
+        <option value="" disabled>选择历史会话</option>
+        @for (conversation of conversations(); track conversation.id) { <option [value]="conversation.id">{{ conversation.created_at | date:'MM-dd HH:mm' }} · {{ conversation.patient_ids.length }} 位患者 · {{ conversation.id.slice(0, 8) }}</option> }
+      </select></label>
+      <button (click)="clear()" [disabled]="loading()">新会话</button>
+      @if (activeConversation(); as id) { <button (click)="openConversation(id)" [disabled]="loading()">刷新会话</button> }
+    </div>
+    <p class="hint scope-hint">患者范围在会话创建时固定。更换患者或操作刚创建的患者，请开启新会话。</p>
+    <div class="agent-status" aria-live="polite"><strong>Agent 状态：</strong>{{ status() }}</div>
+    <details class="trace"><summary>执行轨迹（{{ events().length }}）</summary><ol>@for (event of events(); track $index) { <li>{{ event }}</li> }</ol></details>
+    <p class="error scope-hint" role="alert">{{ agentError() }}</p>
+    @if (canContinue()) { <button (click)="continueRun()" [disabled]="loading()">继续上次中断的执行</button> }
+    @if (review(); as pending) {
+      <section class="approval-panel"><h3>等待人工审批</h3><p>以下操作尚未执行。请检查患者、字段和时间，再逐项批准或拒绝。删除患者会删除关联病历与预约。</p>
+        @for (action of pending.actions; track $index) {
+          <article><strong>{{ action.name }}</strong><pre>{{ action.arguments | json }}</pre>
+            <label>决定<select [(ngModel)]="decisions[$index]" [disabled]="loading()"><option value="reject">拒绝</option><option value="approve">批准执行</option></select></label>
+          </article>
+        }
+        <button class="primary" (click)="submitReview()" [disabled]="loading()">提交决定并继续 Agent</button>
+      </section>
+    }
     <div class="messages">
       <article *ngFor="let message of messages()" [class.user]="message.role === 'user'">
         <p>{{ message.content }}</p>
@@ -81,6 +132,9 @@
         </small>
       </article>
     </div>
+    @if (finalAnswer(); as answer) {
+      <div class="scope-hint"><p *ngIf="answer.evidence_ids.length">证据来源：{{ answer.evidence_ids.join(', ') }}</p><p class="warning" *ngFor="let limitation of answer.limitations">{{ limitation }}</p></div>
+    }
 
     <form class="composer" (ngSubmit)="send()">
       <textarea
@@ -88,11 +142,10 @@
         (ngModelChange)="input.set($event)"
         name="message"
         placeholder="Connect the model to start chatting"
-        [disabled]="loading() || !connected()"
+        [disabled]="loading() || !connected() || !!review() || canContinue()"
       ></textarea>
       <div class="actions">
-        <button type="button" (click)="clear()" [disabled]="loading()">Clear</button>
-        <button type="submit" [disabled]="loading() || !connected() || !input().trim()">Send</button>
+        <button type="submit" [disabled]="loading() || !connected() || !input().trim() || !!review() || canContinue()">发送</button>
       </div>
     </form>
   </section>

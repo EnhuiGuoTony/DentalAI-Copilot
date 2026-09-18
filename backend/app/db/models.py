@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, func, UniqueConstraint, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -132,4 +132,71 @@ class AgentRun(Base):
     user_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_trace: Mapped[list] = mapped_column(JSONB, nullable=False)
     final_output: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    """诊所成员账号；患者共享，凭据和会话按用户隔离。密码只保存 Argon2 哈希。"""
+    __tablename__ = "users"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username: Mapped[str] = mapped_column(String(80), unique=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    password_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LoginSession(Base):
+    """可撤销的服务端登录会话；数据库只存随机 Cookie 的摘要。"""
+    __tablename__ = "login_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Appointment(Base):
+    """预约使用带时区时间；同一患者的有效预约不可重叠，由服务事务检查。"""
+    __tablename__ = "appointments"
+    __table_args__ = (CheckConstraint("ends_at > starts_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patient_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("patients.id"), index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(30), default="scheduled")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Conversation(Base):
+    """归属和固定患者范围由服务端维护；LangGraph 消息与中断存于 checkpoint 表。"""
+    __tablename__ = "conversations"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    patient_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    privacy_map: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MutationReceipt(Base):
+    """工具副作用与回执同事务提交，checkpoint 重放相同工具调用时返回原结果。"""
+    __tablename__ = "mutation_receipts"
+    __table_args__ = (UniqueConstraint("conversation_id", "tool_call_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    tool_call_id: Mapped[str] = mapped_column(String(200))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    operation: Mapped[str] = mapped_column(String(80))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApprovalAudit(Base):
+    """记录谁对哪个中断作了什么决定；不重复保存临床原文。"""
+    __tablename__ = "approval_audits"
+    __table_args__ = (UniqueConstraint("conversation_id", "interrupt_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    interrupt_id: Mapped[str] = mapped_column(String(200))
+    decisions: Mapped[list] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

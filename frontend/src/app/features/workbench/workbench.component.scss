@@ -101,13 +101,29 @@ input { width: 100px; border: 1px solid #c5d1e2; border-radius: 6px; padding: 8p
 
 .chat-panel {
   display: grid;
-  grid-template-rows: minmax(420px, 1fr) auto;
-  min-height: calc(100vh - 132px);
+  grid-template-rows: auto;
+  min-height: 480px;
   background: #fff;
   border: 1px solid #d9e2ef;
   border-radius: 8px;
   overflow: hidden;
 }
+
+// 预约、审批和执行轨迹各自保留可读布局，小屏自动换行，不挤压审批参数。
+.appointments-panel { margin-bottom: 18px; }
+.appointment-list { max-height: 360px; overflow: auto; margin: 12px 0; }
+.appointment-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: none; margin-bottom: 8px; }
+.appointment-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.appointment-form label { display: grid; gap: 5px; }
+.appointment-form input { width: auto; }
+select { padding: 8px; border: 1px solid #c5d1e2; border-radius: 6px; max-width: 100%; font: inherit; }
+.agent-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px; }
+.scope-hint { margin: 0 16px 12px; }
+.agent-status { padding: 12px 16px; background: #eaf4f8; }
+.trace { margin: 12px 16px; font-size: 13px; }
+.approval-panel { margin: 16px; padding: 16px; border: 2px solid #ce942b; background: #fff8e8; border-radius: 8px; }
+.approval-panel article { margin: 12px 0; max-width: none; }
+.approval-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .messages {
   display: flex;

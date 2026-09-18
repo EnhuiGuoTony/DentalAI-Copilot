@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.services.llm_service import LlmService
 from app.db.session import get_db
 from app.schemas.chat import ChatConnectionResponse, ChatRequest, ChatResponse
-from app.services.pms_agent_service import PmsAgentService
 
 router = APIRouter(tags=["chat"])
 
@@ -23,15 +22,5 @@ def connect_chat() -> ChatConnectionResponse:
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
-    """聊天入口：将用户问题、选中患者和历史交给 Agent，再封装本轮结果。"""
-    # db 由 FastAPI 依赖注入管理；本路由不把数据库访问能力直接交给模型。
-    # 模型只能通过服务中显式注册的工具间接读取数据。
-    pms_agent = PmsAgentService(db)
-    reply, trace, token_usage = pms_agent.run(request.message, request.patient_ids, request.history)
-    return ChatResponse(
-        reply=reply,
-        provider="langchain:pms-agent",
-        mock=not pms_agent.llm.enabled,
-        tool_trace=trace,
-        token_usage=token_usage,
-    )
+    """旧接口退役，客户端需使用有持久化和审批语义的会话 API。"""
+    raise HTTPException(410, "Use /api/conversations for persisted, approval-aware streaming chat")

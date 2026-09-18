@@ -1,11 +1,12 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PatientCreate(BaseModel):
-    name: str
+    model_config = {"str_strip_whitespace": True}
+    name: str = Field(min_length=1, max_length=200)
     date_of_birth: date | None = None
 
 
@@ -23,8 +24,8 @@ class PatientRead(BaseModel):
 
 
 class ClinicalNoteCreate(BaseModel):
-    note_type: str = "clinical"
-    content: str
+    note_type: str = Field(default="clinical", min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=20000)
 
 
 class ClinicalNoteRead(BaseModel):

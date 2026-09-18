@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { finalize, firstValueFrom } from 'rxjs';
 import { DentalAiApiService } from '../../core/api/dentalai-api.service';
 import { ChatMessage, DoxImportSummary, DoxPreviewResponse, Patient } from '../../core/models/api.models';
+import { Appointment, AppointmentInput, Conversation, PendingReview, AgentEvent, AgentAnswer } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-workbench',
@@ -12,12 +13,9 @@ import { ChatMessage, DoxImportSummary, DoxPreviewResponse, Patient } from '../.
   templateUrl: './workbench.component.html',
   styleUrl: './workbench.component.scss'
 })
-export class WorkbenchComponent implements OnInit {
-  private readonly maxHistoryMessages = 4;
+export class WorkbenchComponent implements OnInit, OnDestroy {
   private readonly maxMessageChars = 4000;
-  private conversationHistory: ChatMessage[] = [];
-
-  // The visible transcript keeps every turn; only this smaller array is sent back.
+  // 历史由服务端 checkpoint 持久化；浏览器仅保留当前展示内容。
   readonly messages = signal<ChatMessage[]>([]);
   readonly input = signal('Explain this project in one minute for an AI Engineer interview.');
   readonly connectionLabel = signal('Connect model');
@@ -34,12 +32,117 @@ export class WorkbenchComponent implements OnInit {
   readonly importError = signal('');
   readonly importPatientLimit = signal(10);
   readonly selectedPatientIds = signal<string[]>([]);
+  readonly appointments = signal<Appointment[]>([]);
+  readonly conversations = signal<Conversation[]>([]);
+  readonly activeConversation = signal<string | null>(null);
+  readonly review = signal<PendingReview | null>(null);
+  readonly events = signal<string[]>([]);
+  readonly status = signal('就绪');
+  readonly agentError = signal('');
+  readonly canContinue = signal(false);
+  readonly finalAnswer = signal<AgentAnswer | null>(null);
+  readonly appointmentError = signal('');
+  readonly appointmentBusy = signal(false);
+  private streamController?: AbortController;
+  decisions: ('approve' | 'reject')[] = [];
+  appointmentPatient = ''; appointmentStart = ''; appointmentEnd = ''; appointmentReason = '';
+  appointmentStatus: Appointment['status'] = 'scheduled';
+  editingAppointment: Appointment | undefined;
 
   constructor(private readonly api: DentalAiApiService) {}
 
   ngOnInit(): void {
     this.loadPatients();
+    this.loadAppointments();
+    this.loadConversations();
   }
+
+  ngOnDestroy(): void { this.streamController?.abort(); }
+
+  loadAppointments(): void {
+    this.api.appointments().subscribe({ next: items => this.appointments.set(items), error: () => this.appointmentError.set('无法读取预约。') });
+  }
+  patientName(id: string): string { return this.patients().find(p => p.id === id)?.name ?? id; }
+  appointmentLabel(status: Appointment['status']): string {
+    return { scheduled: '已预约', checked_in: '已到诊', completed: '已完成', cancelled: '已取消' }[status];
+  }
+  editAppointment(item: Appointment): void {
+    this.editingAppointment = item; this.appointmentPatient = item.patient_id;
+    // datetime-local 接受本地墙上时间；提交时再转换为明确的 UTC ISO 时间。
+    const local = (value: string) => { const d = new Date(value); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    this.appointmentStart = local(item.starts_at); this.appointmentEnd = local(item.ends_at);
+    this.appointmentReason = item.reason; this.appointmentStatus = item.status;
+  }
+  resetAppointment(): void {
+    this.editingAppointment = undefined; this.appointmentPatient = ''; this.appointmentStart = '';
+    this.appointmentEnd = ''; this.appointmentReason = ''; this.appointmentStatus = 'scheduled';
+  }
+  saveAppointment(): void {
+    if (this.appointmentBusy()) return;
+    const start = new Date(this.appointmentStart), end = new Date(this.appointmentEnd);
+    if (!this.appointmentPatient || !this.appointmentReason.trim() || !Number.isFinite(start.getTime()) || end <= start || !Number.isFinite(end.getTime())) {
+      this.appointmentError.set('请选择患者、填写原因和有效起止时间。'); return;
+    }
+    const data: AppointmentInput = { patient_id: this.appointmentPatient, starts_at: start.toISOString(), ends_at: end.toISOString(), reason: this.appointmentReason, status: this.appointmentStatus };
+    this.appointmentBusy.set(true); this.appointmentError.set('');
+    this.api.saveAppointment(data, this.editingAppointment).pipe(finalize(() => this.appointmentBusy.set(false))).subscribe({
+      next: () => { this.resetAppointment(); this.loadAppointments(); },
+      error: e => this.appointmentError.set(e.status === 409 ? '时间冲突或记录已变化，请刷新后重试。' : '保存预约失败。')
+    });
+  }
+  deleteAppointment(item: Appointment): void {
+    if (this.appointmentBusy() || !window.confirm(`删除 ${this.patientName(item.patient_id)} 的这条预约？`)) return;
+    this.appointmentBusy.set(true);
+    this.api.deleteAppointment(item).pipe(finalize(() => this.appointmentBusy.set(false))).subscribe({
+      next: () => this.loadAppointments(), error: () => this.appointmentError.set('删除失败，记录可能已变化，请刷新。')
+    });
+  }
+  loadConversations(): void {
+    this.api.conversations().subscribe({ next: items => this.conversations.set(items), error: () => this.agentError.set('无法读取历史会话。') });
+  }
+  openConversation(id: string): void {
+    if (this.loading()) return;
+    this.loading.set(true); this.agentError.set('');
+    this.api.conversation(id).pipe(finalize(() => this.loading.set(false))).subscribe({
+      next: state => {
+        this.activeConversation.set(id); this.messages.set(state.messages); this.setReview(state.review);
+        this.canContinue.set(state.can_continue); this.events.set([]); this.finalAnswer.set(null);
+        this.selectedPatientIds.set(this.conversations().find(c => c.id === id)?.patient_ids ?? []);
+        this.status.set(state.review ? '等待审批' : state.can_continue ? '执行中断，可继续' : '已恢复会话');
+      }, error: () => this.agentError.set('无法恢复会话。')
+    });
+  }
+  private setReview(review: PendingReview | null): void {
+    this.review.set(review);
+    // 默认拒绝：每个动作必须由用户主动选择批准，不能批量默认同意。
+    this.decisions = review?.actions.map(() => 'reject') ?? [];
+  }
+  private handleEvent(event: AgentEvent): void {
+    if (event.type === 'status' || event.type === 'tool') {
+      const text = `${event.tool_name ? event.tool_name + ' · ' : ''}${event.message}`;
+      this.status.set(text); this.events.update(items => [...items.slice(-99), text]);
+    } else if (event.type === 'approval') {
+      this.setReview(event.review); this.status.set(event.message);
+    } else if (event.type === 'result' && event.result) {
+      this.finalAnswer.set(event.result); this.setReview(null); this.canContinue.set(false);
+      this.messages.update(items => [...items, { role: 'assistant', content: event.result!.answer }]);
+      this.status.set(event.mock ? '完成（Mock 模式）' : '完成');
+    } else if (event.type === 'error') { this.agentError.set(event.message); this.status.set('执行失败，请刷新会话'); }
+  }
+  private async runStream(action: 'messages' | 'resume' | 'continue', body: object): Promise<void> {
+    const id = this.activeConversation();
+    if (!id) return;
+    this.loading.set(true); this.agentError.set(''); this.streamController = new AbortController();
+    try { await this.api.stream(id, action, body, e => this.handleEvent(e), this.streamController.signal); }
+    catch (error) { if (!this.streamController.signal.aborted) this.agentError.set(error instanceof Error ? error.message : '连接中断，请刷新会话。'); }
+    finally { this.loading.set(false); this.loadPatients(); this.loadAppointments(); }
+  }
+  async submitReview(): Promise<void> {
+    const review = this.review();
+    if (!review || this.loading()) return;
+    await this.runStream('resume', { interrupt_id: review.interrupt_id, decisions: this.decisions.map(type => ({ type })) });
+  }
+  async continueRun(): Promise<void> { if (!this.loading()) await this.runStream('continue', {}); }
 
   loadPatients(): void {
     if (this.patientsLoading()) return;
@@ -116,13 +219,9 @@ export class WorkbenchComponent implements OnInit {
       });
   }
 
-  send(): void {
+  async send(): Promise<void> {
     const message = this.input().trim();
-    if (!message || this.loading() || !this.connected()) return;
-
-    const history = this.conversationHistory
-      .slice(-this.maxHistoryMessages)
-      .map(({ role, content }) => ({ role, content }));
+    if (!message || this.loading() || !this.connected() || this.review() || this.canContinue()) return;
     const userTurn: ChatMessage = {
       role: 'user',
       content: message.slice(0, this.maxMessageChars)
@@ -131,27 +230,18 @@ export class WorkbenchComponent implements OnInit {
     this.input.set('');
     this.loading.set(true);
 
-    this.api.chat(userTurn.content, history, this.selectedPatientIds())
-      .pipe(finalize(() => this.loading.set(false)))
-      .subscribe({
-        next: response => {
-          const assistantTurn: ChatMessage = {
-            role: 'assistant',
-            content: response.reply,
-            tokenUsage: response.token_usage
-          };
-          this.conversationHistory = [...this.conversationHistory, userTurn, assistantTurn]
-            .slice(-this.maxHistoryMessages);
-          this.messages.set([...this.messages(), assistantTurn]);
-        },
-        error: () => {
-          this.connected.set(false);
-          this.connectionLabel.set('Request failed - reconnect');
-        }
-      });
+    try {
+      if (!this.activeConversation()) {
+        const conversation = await firstValueFrom(this.api.createConversation(this.selectedPatientIds()));
+        this.activeConversation.set(conversation.id); this.loadConversations();
+      }
+      await this.runStream('messages', { message: userTurn.content });
+    } catch { this.agentError.set('创建会话失败。'); }
+    finally { this.loading.set(false); }
   }
 
   togglePatient(patientId: string, checked: boolean): void {
+    if (this.activeConversation()) return;
     this.selectedPatientIds.update(ids => checked ? [...new Set([...ids, patientId])] : ids.filter(id => id !== patientId));
   }
 
@@ -162,7 +252,9 @@ export class WorkbenchComponent implements OnInit {
   }
 
   clear(): void {
+    if (this.loading()) return;
     this.messages.set([]);
-    this.conversationHistory = [];
+    this.activeConversation.set(null); this.setReview(null); this.events.set([]); this.canContinue.set(false);
+    this.finalAnswer.set(null); this.agentError.set(''); this.status.set('新会话：请选择患者范围');
   }
 }

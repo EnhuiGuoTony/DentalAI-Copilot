@@ -6,8 +6,7 @@ from app.db.session import Base, engine
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
-    # This project currently has no migration framework.  Keep existing local
-    # demo databases compatible when patient master-data fields are introduced.
+    # 幂等启动迁移用于兼容已有演示库；生产应采用带版本和回滚策略的迁移流程。
     if engine.dialect.name == "postgresql":
         statements = (
             "ALTER TABLE patients ADD COLUMN IF NOT EXISTS dox_patient_id VARCHAR(80)",

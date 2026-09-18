@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "DentalAI Copilot"
+    # 本地 HTTP 使用 False；HTTPS 部署设为 True，并配置明确的前端 Origin。
+    cookie_secure: bool = False
+    allowed_origins: list[str] = ["http://localhost:4200", "http://127.0.0.1:4200"]
     database_url: str = "postgresql+psycopg://dentalai:dentalai@localhost:5438/dentalai"
     dox_mysql_url: str = ""
     # Set this when the API runs on the host while DOX MySQL is local. It

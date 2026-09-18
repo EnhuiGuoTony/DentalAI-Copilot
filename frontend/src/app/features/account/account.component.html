@@ -1,0 +1,28 @@
+@if (!ready()) { <p class="account">正在检查登录状态…</p> }
+@else if (session.user(); as user) {
+  <div class="bar"><strong>DentalAI · 诊所工作区</strong><span>{{ user.display_name }} · {{ user.username }}</span>
+    <button (click)="showProfile = !showProfile">个人资料</button><button (click)="logout()">退出登录</button>
+  </div>
+  @if (showProfile) {
+    <section class="account"><h2>个人资料</h2>
+      <form (ngSubmit)="saveProfile()"><label>显示名称<input name="displayName" [(ngModel)]="displayName" required maxlength="120"></label><button [disabled]="busy()">保存资料</button></form>
+      <h3>修改密码</h3><form (ngSubmit)="changePassword()">
+        <label>当前密码<input type="password" name="current" [(ngModel)]="currentPassword" autocomplete="current-password" required></label>
+        <label>新密码<input type="password" name="new" [(ngModel)]="newPassword" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+        <button [disabled]="busy()">修改密码并退出所有会话</button>
+      </form><p class="error">{{ error() }}</p><p class="notice">{{ notice() }}</p>
+    </section>
+  }
+  <app-workbench />
+} @else {
+  <section class="account"><h1>DentalAI Copilot</h1><p>登录后使用患者管理、预约和 Agent。诊所成员共享患者，个人会话互相隔离。</p>
+    <form (ngSubmit)="submit()">
+      <label>用户名<input name="username" [(ngModel)]="username" autocomplete="username" pattern="[a-zA-Z0-9_.\-]{3,80}" required></label>
+      @if (registerMode) { <label>显示名称<input name="displayName" [(ngModel)]="displayName" maxlength="120" required></label> }
+      <label>密码（至少 10 位）<input type="password" name="password" [(ngModel)]="password" [attr.autocomplete]="registerMode ? 'new-password' : 'current-password'" minlength="10" maxlength="128" required></label>
+      <button [disabled]="busy()">{{ registerMode ? '注册并登录' : '登录' }}</button>
+      <button type="button" (click)="registerMode = !registerMode">{{ registerMode ? '已有账号，去登录' : '创建账号' }}</button>
+    </form><p class="error">{{ error() }}</p><p class="notice">{{ notice() }}</p>
+    <small>教育演示项目，不是经过验证的临床诊断系统。</small>
+  </section>
+}
