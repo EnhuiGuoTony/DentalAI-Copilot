@@ -23,6 +23,8 @@
           <button (click)="clear()" [disabled]="loading()">＋ 新会话</button>@if (activeConversation(); as id) { <button (click)="openConversation(id)" [disabled]="loading()">刷新</button> }
         </div>
         <div class="agent-status" aria-live="polite"><span class="tiny-dot"></span>{{ status() }}</div>
+        <!-- 消息、轨迹、错误和证据共用滚动区，附加说明不再挤占消息区与输入框。 -->
+        <div class="chat-content">
         <details class="trace"><summary>执行轨迹 <span>{{ events().length }}</span></summary><ol>@for (event of events(); track $index) { <li>{{ event }}</li> }</ol>@if (!events().length) { <p class="hint">发送消息后，可在这里查看执行阶段与工具活动。</p> }</details>
         <p class="error scope-hint" role="alert" *ngIf="agentError()">{{ agentError() }}</p>
         @if (canContinue()) { <button class="continue-button" (click)="continueRun()" [disabled]="loading()">继续上次中断的执行</button> }
@@ -33,7 +35,12 @@
           }
           <article *ngFor="let message of messages()" [class.user]="message.role === 'user'"><span class="message-author">{{ message.role === 'user' ? '你' : '✳ Copilot' }}</span><p>{{ message.content }}</p><small class="token-usage" *ngIf="message.role === 'assistant' && message.tokenUsage">Token：{{ message.tokenUsage.total_tokens }}（输入 {{ message.tokenUsage.input_tokens }} / 输出 {{ message.tokenUsage.output_tokens }}）</small></article>
         </div>
-        @if (finalAnswer(); as answer) { <div class="scope-hint"><p *ngIf="answer.evidence_ids.length">证据来源：{{ answer.evidence_ids.join(', ') }}</p><p class="warning" *ngFor="let limitation of answer.limitations">{{ limitation }}</p></div> }
+        @if (finalAnswer(); as answer) {
+          @if (answer.evidence_ids.length || answer.limitations.length) {
+            <details class="answer-details"><summary>证据与说明 · {{ answer.evidence_ids.length }} 条来源 / {{ answer.limitations.length }} 条说明</summary><p *ngIf="answer.evidence_ids.length">证据来源：{{ answer.evidence_ids.join(', ') }}</p><p class="warning" *ngFor="let limitation of answer.limitations">{{ limitation }}</p></details>
+          }
+        }
+        </div>
         <form class="composer" (ngSubmit)="send()">
           <textarea [ngModel]="input()" (ngModelChange)="input.set($event)" name="message" aria-label="发送给 Copilot 的消息" maxlength="4000" [placeholder]="connected() ? '描述你想完成的工作…' : '点击右上角「连接模型」开始对话'" [disabled]="loading() || !connected() || !!review() || canContinue()"></textarea>
           <div class="actions"><span class="hint">{{ selectedPatientIds().length ? '已选择 ' + selectedPatientIds().length + ' 位患者' : '未选择患者 · 通用对话' }}</span><button type="submit" [disabled]="loading() || !connected() || !input().trim() || !!review() || canContinue()">{{ loading() ? '处理中…' : '发送消息 ↑' }}</button></div>

@@ -148,10 +148,15 @@ def test_note_indexing_and_patient_delete_cleanup(workspace):
 class WriteModel(BaseChatModel):
     """模拟 provider 的工具协议，但审批和数据库执行完全使用真实业务代码。"""
     planned_change: dict | None = None
+    plain_first: bool = False
+    calls: int = 0
     @property
     def _llm_type(self): return "test-tool-model"
     def bind_tools(self, tools, **kwargs): return self
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        if self.plain_first and self.calls == 1:
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content="I can create that patient."))])
         completed = any(isinstance(m, ToolMessage) and m.name == "change_records" for m in messages)
         call = ({"name": "AgentAnswer", "id": "answer", "args": {"answer": "Finished", "evidence_ids": [], "limitations": []}}
                 if completed else {"name": "change_records", "id": "write-once", "args": {"change": self.planned_change or {"operation": "create_patient", "data": {"name": "Agent synthetic patient"}}}})
@@ -204,6 +209,93 @@ def test_hitl_reject_does_not_write(workspace, write_model):
     assert result[-1]["type"] == "result", result
     with workspace() as db:
         assert db.scalar(select(func.count()).select_from(Patient)) == 0
+
+
+def test_plain_text_creation_recovers_to_persisted_approval(workspace, monkeypatch):
+    """真实 PostgreSQL checkpoint 验证文字计划纠正后可进入审批，批准前没有患者记录。"""
+    original = pms_agent_service.PmsAgentService.build
+    test_model = WriteModel(plain_first=True)
+    monkeypatch.setattr(pms_agent_service.PmsAgentService, "build", lambda self, saver, model=None: original(self, saver, test_model))
+    client = TestClient(app); register(client)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    run = events(client.post(f"/api/conversations/{cid}/messages", json={"message": "Create a synthetic patient."}))
+    assert run[-1]["type"] == "approval", run
+    with workspace() as db:
+        assert db.scalar(select(func.count()).select_from(Patient)) == 0
+    review = client.get(f"/api/conversations/{cid}").json()["review"]
+    assert review == run[-1]["review"]
+    result = events(client.post(f"/api/conversations/{cid}/resume", json={"interrupt_id": review["interrupt_id"], "decisions": [{"type": "approve"}]}))
+    assert result[-1]["type"] == "result", result
+    with workspace() as db:
+        assert db.scalar(select(func.count()).select_from(Patient)) == 1
+        assert db.scalar(select(func.count()).select_from(MutationReceipt)) == 1
+
+
+class ContextAnswerModel(BaseChatModel):
+    """模型不主动调用读取工具，验证服务端仍会提供当前所选患者的完整基础字段。"""
+    expected_patient: str
+    calls: int = 0
+
+    @property
+    def _llm_type(self): return "test-context-model"
+    def bind_tools(self, tools, **kwargs): return self
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        records = json.loads(next(message.content for message in reversed(messages) if isinstance(message, ToolMessage) and message.name == "read_records"))
+        assert len(records["patients"]) == 1
+        patient = records["patients"][0]
+        assert patient["patient_id"] == self.expected_patient
+        assert patient["data"]["name"].startswith("[P_")
+        assert patient["notes"] == patient["appointments"] == patient["facts"] == []
+        answer = {"answer": patient["data"]["name"] + " has no clinical notes yet.", "evidence_ids": [], "limitations": []}
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="", tool_calls=[{"name": "AgentAnswer", "args": answer, "id": f"context-answer-{self.calls}"}]))])
+
+
+def test_selected_local_patient_without_dox_is_read_each_turn(workspace, monkeypatch):
+    client = TestClient(app); register(client)
+    patient = client.post("/api/patients", json={"name": "Synthetic local patient"}).json()
+    assert patient["dox_patient_id"] is None
+    client.post("/api/patients", json={"name": "Unselected synthetic patient"})
+    original = pms_agent_service.PmsAgentService.build
+    test_model = ContextAnswerModel(expected_patient=patient["id"])
+    monkeypatch.setattr(pms_agent_service.PmsAgentService, "build", lambda self, saver, model=None: original(self, saver, test_model))
+    cid = client.post("/api/conversations", json={"patient_ids": [patient["id"]]}).json()["id"]
+    for _ in range(2):
+        run = events(client.post(f"/api/conversations/{cid}/messages", json={"message": "Show the selected patient's information."}))
+        assert run[-1]["type"] == "result", run
+        assert "Synthetic local patient" in run[-1]["result"]["answer"]
+        assert sum(event.get("tool_name") == "read_records" for event in run) == 2
+    with conversation_service.graph_context(UUID(cid), UUID(client.get('/api/auth/me').json()['id'])) as (graph, config, _):
+        messages = graph.get_state(config).values["messages"]
+        assert sum(isinstance(message, ToolMessage) and message.name == "read_records" for message in messages) == 2
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_AGENT_TESTS") != "1", reason="External model smoke test is opt-in")
+def test_configured_provider_proposes_creation_and_reads_local_patient(workspace, monkeypatch):
+    """显式启用才调用配置的真实模型；只传合成信息，写入仍限定在随机测试 schema。
+
+    与可控模型回归互补：验证真实 provider 是否产生 change_records 中断，
+    然后拒绝提议；另建无 DOX 患者检查模型是否使用服务端提供的真实只读结果。
+    """
+    monkeypatch.setattr(get_settings(), "mock_llm", False)
+    client = TestClient(app); register(client)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    run = events(client.post(f"/api/conversations/{cid}/messages", json={"message": "Create a new patient named Synthetic Regression Patient. Only the name is available. Leave optional fields empty and propose the creation for review."}))
+    assert run[-1]["type"] == "approval", [(event["type"], event.get("tool_name"), event.get("error_code")) for event in run]
+    review = run[-1]["review"]
+    assert review["actions"][0]["arguments"]["change"]["operation"] == "create_patient"
+    with workspace() as db:
+        assert db.scalar(select(func.count()).select_from(Patient)) == 0
+    result = events(client.post(f"/api/conversations/{cid}/resume", json={"interrupt_id": review["interrupt_id"], "decisions": [{"type": "reject"} for _ in review["actions"]]}))
+    assert result[-1]["type"] == "result"
+    patient = client.post("/api/patients", json={"name": "Synthetic Local Patient", "date_of_birth": "1990-01-01"}).json()
+    assert patient["dox_patient_id"] is None
+    cid = client.post("/api/conversations", json={"patient_ids": [patient["id"]]}).json()["id"]
+    run = events(client.post(f"/api/conversations/{cid}/messages", json={"message": "Show the selected patient's name and date of birth. Distinguish absent clinical notes from an absent patient."}))
+    assert run[-1]["type"] == "result"
+    assert "Synthetic Local Patient" in run[-1]["result"]["answer"]
+    with workspace() as db:
+        assert db.scalar(select(func.count()).select_from(MutationReceipt)) == 0
 
 
 def test_mock_memory_and_fixed_patient_scope(workspace):

@@ -270,7 +270,31 @@ h3 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: max(590px, calc(100dvh - 420px));
+  height: max(680px, calc(100dvh - 420px));
+}
+// 只有中部滚动，顶部状态与底部输入框不参与收缩；长说明只增加可滚动内容。
+.chat-content {
+  flex: 1 1 auto;
+  min-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.chat-panel > .agent-toolbar,
+.chat-panel > .agent-status,
+.chat-panel > .composer {
+  flex-shrink: 0;
+}
+.answer-details {
+  margin: 0 22px 20px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.answer-details summary {
+  cursor: pointer;
+  color: var(--muted);
 }
 .agent-toolbar {
   padding: 19px 22px;
@@ -338,10 +362,7 @@ h3 {
   flex-direction: column;
   gap: 20px;
   padding: 24px;
-  flex: 1;
-  max-height: 600px;
-  overflow: auto;
-  min-height: 100px;
+  min-height: 280px;
 }
 .chat-welcome {
   text-align: center;
@@ -434,6 +455,7 @@ h3 {
   border: 0;
   background: transparent;
   min-height: 70px;
+  max-height: 160px;
   padding: 6px;
   resize: vertical;
   font-size: 13px;
@@ -829,7 +851,7 @@ h3 {
     grid-template-columns: minmax(0, 1fr) 350px;
   }
   .chat-panel {
-    height: max(650px, calc(100dvh - 420px));
+    height: max(680px, calc(100dvh - 420px));
   }
 }
 @media (max-width: 1200px) {
@@ -951,8 +973,7 @@ h3 {
     grid-template-columns: 1fr;
   }
   .chat-panel {
-    min-height: 600px;
-    height: auto;
+    height: 720px;
   }
   .patients-card {
     grid-row: 1;

@@ -90,12 +90,17 @@ try {
   const submissions = [];
   let authenticated = true;
   let rejectResume = false;
+  const longAnswer = {
+    answer: 'Synthetic patient information.\n'.repeat(60),
+    evidence_ids: Array.from({ length: 20 }, (_, index) => `synthetic-evidence-${index}`),
+    limitations: Array.from({ length: 25 }, () => 'Synthetic limitation for layout regression. '.repeat(12))
+  };
   handleRequest = async ({ requestId, request }) => {
     const path = new URL(request.url).pathname;
     let body = {}; let status = 200; let type = 'application/json';
     if (request.method === 'OPTIONS') status = 204;
     else if (path.endsWith('/auth/me')) { body = { id: 'demo-user', username: 'demo', display_name: 'Demo User' }; if (!authenticated) status = 401; }
-    else if (path.endsWith('/patients')) body = [{ id: 'demo-patient', name: 'Demo Patient', date_of_birth: '1990-01-01', patient_number: 'DEMO-001', medical_record_number: 'MR-DEMO', dox_patient_id: 'demo' }];
+    else if (path.endsWith('/patients')) body = [{ id: 'demo-patient', name: 'Demo Patient', date_of_birth: '1990-01-01', patient_number: 'DEMO-001', medical_record_number: 'MR-DEMO', dox_patient_id: null }];
     else if (path.endsWith('/appointments')) body = [];
     else if (path.endsWith('/chat/connect')) body = { connected: true, mock: true, provider: 'mock' };
     else if (path.endsWith('/conversations')) body = request.method === 'POST' ? { id: 'demo-thread', patient_ids: ['demo-patient'] } : [{ id: 'demo-thread', patient_ids: ['demo-patient'], created_at: '2026-09-18T09:00:00Z' }];
@@ -104,8 +109,9 @@ try {
     else if (path.endsWith('/resume')) {
       submissions.push(JSON.parse(request.postData));
       await delay(150);
-      if (rejectResume) { status = 409; body = { detail: 'Stale approval' }; }
-      else { type = 'text/event-stream'; body = `data: ${JSON.stringify({ type: 'result', result: { answer: 'Synthetic result', evidence_ids: [], limitations: [] }, mock: true })}\n\n`; }
+      type = 'text/event-stream';
+      if (rejectResume) { body = `data: ${JSON.stringify({ type: 'error', message: 'Approval is stale or decisions do not match the pending actions' })}\n\n`; }
+      else { body = `data: ${JSON.stringify({ type: 'result', result: longAnswer, mock: true })}\n\n`; }
     }
     else { throw new Error(`Unexpected API: ${request.method} ${path}`); }
     await call('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: [
@@ -145,12 +151,29 @@ try {
   await click('.modal-footer .primary');
   await until(`!document.querySelector('dialog').open`);
   assert.deepEqual(submissions[0], { interrupt_id: review.interrupt_id, decisions: [{ type: 'approve' }, { type: 'reject' }] });
-  // 恢复历史会话仍自动打开审批；409 失败保留弹窗和错误，供用户检查。
+  // 长答案与大量说明全部进入同一滚动区，展开后也不能压缩输入框或对话窗口。
+  await until(`document.querySelector('.answer-details') !== null`);
+  assert.equal(await evaluate(`document.querySelector('.answer-details').open`), false);
+  const contentHeight = await evaluate(`document.querySelector('.chat-content').clientHeight`);
+  await click('.answer-details summary');
+  for (const width of [1440, 390, 768]) {
+    await call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(100);
+    const geometry = await evaluate(`(() => { const area = document.querySelector('.chat-content'); const composer = document.querySelector('.composer'); return { height: area.clientHeight, scroll: area.scrollHeight, composer: composer.clientHeight, input: composer.querySelector('textarea').clientHeight }; })()`);
+    assert.ok(geometry.height >= 280, `Chat collapsed at ${width}: ${JSON.stringify(geometry)}`);
+    assert.ok(geometry.scroll > geometry.height);
+    assert.ok(geometry.composer >= 120 && geometry.input >= 70);
+    await evaluate(`document.querySelector('.chat-panel').scrollIntoView({ block: 'start' })`);
+    await screenshot(`long-answer-${width}`);
+  }
+  await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1080, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await evaluate(`document.querySelector('.chat-content').clientHeight`), contentHeight);
+  // 恢复历史会话仍自动打开审批；真实后端使用 SSE error 表达过期审批，保留弹窗提示。
   await evaluate(`const history = document.querySelector('.history-select select'); history.value = 'demo-thread'; history.dispatchEvent(new Event('change', { bubbles: true }));`);
   await until(`document.querySelector('dialog').open`);
   rejectResume = true;
   await click('.modal-footer .primary');
-  await until(`document.querySelector('.modal-footer .error')?.textContent.includes('409')`);
+  await until(`document.querySelector('.modal-footer .error')?.textContent.includes('stale')`);
   assert.equal(await evaluate(`document.querySelector('dialog').open`), true);
   assert.deepEqual(submissions[1].decisions, [{ type: 'reject' }, { type: 'reject' }]);
   await click('.modal-heading button');
@@ -175,7 +198,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await screenshot('login-desktop');
   assert.deepEqual(errors, []);
-  console.log('PASS: SSE approval, restore, dismiss/reopen, mixed decisions, 409 failure, responsive layouts and login.');
+  console.log('PASS: SSE approval/error, restore, mixed decisions, long answers/limitations, responsive layouts and login.');
   console.log(`Screenshots: ${output}`);
   await call('Browser.close');
 } finally {

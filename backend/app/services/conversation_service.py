@@ -170,7 +170,7 @@ def stream_turn(conversation_id: UUID, user_id: UUID, message: str | None = None
                     if node == "model":
                         yield encode(StreamEvent(type="status", message="模型步骤完成"))
                     elif node == "StructuredOutputMiddleware.after_model" and isinstance(values, dict) and values.get("jump_to") == "model":
-                        yield encode(StreamEvent(type="status", message="正在纠正模型回答格式（不会重复执行业务操作）"))
+                        yield encode(StreamEvent(type="status", message="正在纠正模型工具调用格式"))
             snapshot = graph.get_state(config)
             review = pending_review(snapshot, service.aliases)
             if review:
