@@ -57,7 +57,7 @@ class PatientContextService:
         }
         # 把向量命中的患者与问题明确提到的患者合并，兼顾检索和简单名称匹配。
         focus_ids = evidence_patient_ids | named_patient_ids
-        # 小样本时扩大到已读取的所有患者，以补偿演示哈希向量的语义理解不足。
+        # 此旧版上下文构建器在小样本时扩大到所有已读取患者，不依赖向量模型效果。
         # 这会带入并非直接相关的上下文，不是精确召回或权限隔离机制。
         if len(patients) <= 10:
             focus_ids.update(patient_ids)

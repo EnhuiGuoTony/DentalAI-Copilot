@@ -69,6 +69,15 @@
       <div class="import-intro"><p class="eyebrow">CONNECTED KNOWLEDGE</p><h2>把分散的信息，<br>带到一起。</h2><p>预览数据源，导入原始记录，<br>为检索与会话准备患者上下文。</p><div class="import-steps"><span>01 / 预览数据源</span><span>02 / 选择导入数量</span><span>03 / 在工作台选择患者</span></div></div>
       <article class="card import-card"><div class="card-heading"><div><p class="eyebrow">DATA SOURCE</p><h2>DOX 数据导入</h2></div><button (click)="previewDox()" [disabled]="previewLoading() || importLoading()">{{ previewLoading() ? '预览中…' : '预览数据源' }}</button></div><p class="hint">导入患者文本病历与临床数据。</p><ng-container *ngIf="doxPreview() as preview"><p class="connection" [class.ok]="preview.connected">{{ preview.connected ? '● DOX 数据源已连接' : '○ DOX 数据源未连接' }}</p><dl class="table-counts" *ngIf="preview.connected"><div *ngFor="let table of preview.tables | keyvalue"><dt>{{ table.key }}</dt><dd>{{ table.value ?? '不可用' }}</dd></div></dl><p class="warning" *ngFor="let warning of preview.warnings">{{ warning }}</p></ng-container><div class="import-controls"><label>导入患者数<input type="number" min="1" max="500" [ngModel]="importPatientLimit()" (ngModelChange)="importPatientLimit.set($event)" /></label><button class="primary" (click)="importDox()" [disabled]="importLoading()">{{ importLoading() ? '正在导入…' : '开始导入 →' }}</button></div><p class="hint">导入保留原文；Agent 使用患者替代标识和 PII 中间件。未知敏感信息仍可能需要人工处理。</p><p class="error" role="alert" *ngIf="importError()">{{ importError() }}</p><div class="result" *ngIf="importResult() as result"><strong>导入 {{ result.status }}</strong><span>患者 {{ result.patients_imported }}/{{ result.patients_requested }} · 笔记 {{ result.notes_imported }} · 临床事实 {{ result.clinical_facts_imported }}</span><p class="warning" *ngFor="let warning of result.warnings">{{ warning }}</p></div></article>
     </section>
+    <section class="card reset-card" [hidden]="section() !== 'imports'" aria-labelledby="reset-card-title">
+      <div><p class="eyebrow">WORKSPACE DATA</p><h2 id="reset-card-title">重新开始一个空工作区</h2>
+        <p class="hint">清空所有成员共享的患者、病历、预约、知识库，以及全部会话和审批记录。登录账号与 DOX 源数据库保留。</p>
+        @if (resetResult(); as result) {
+          <p class="reset-success" role="status">清空完成：删除 {{ result.deleted_counts['patients'] ?? 0 }} 位患者、{{ result.deleted_counts['clinical_notes'] ?? 0 }} 条笔记和 {{ result.deleted_counts['conversations'] ?? 0 }} 个会话。可以重新导入资料。</p>
+        }
+      </div>
+      <button class="danger-button open-reset" (click)="openReset()" [disabled]="resetUnavailable()">清空业务数据</button>
+    </section>
     <footer class="workspace-footer"><span>由你决策 · 由 Copilot 协助</span><span>教育演示 / 非临床诊断系统</span></footer>
   </main>
 </div>
@@ -81,4 +90,17 @@
     </div>
     <footer class="modal-footer"><p class="warning">涉及删除患者时，其关联病历与预约也会删除。</p><p class="error" role="alert" *ngIf="agentError()">{{ agentError() }}</p><div><button (click)="dismissReview()" [disabled]="loading()">稍后处理</button><button class="primary" (click)="submitReview()" [disabled]="loading()">{{ loading() ? '正在提交…' : '提交决定并继续' }}</button></div></footer>
   }
+</dialog>
+<!-- 独立于 Agent 审批：这是用户直接发起的诊所维护，原生 dialog 隔离背景操作。 -->
+<dialog #resetDialog class="approval-dialog reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-description" (cancel)="dismissReset($event)">
+  <header class="modal-heading"><h2 id="reset-title">清空整个诊所的业务数据？</h2></header>
+  <div id="reset-description" class="modal-description">
+    <p>这会永久删除所有成员的患者、病例、病历笔记、临床事实、预约、向量知识库、导入记录，以及所有会话、记忆和待审批操作。</p>
+    <p>保留登录账号、当前登录状态、模型配置和 DOX 源数据库。此操作不可撤销。</p>
+  </div>
+  <footer class="modal-footer">
+    @if (resetError()) { <p class="error reset-error" role="alert">{{ resetError() }}</p> }
+    <div><button class="cancel-reset" autofocus (click)="dismissReset()" [disabled]="resetLoading()">取消</button>
+      <button class="danger-button confirm-reset" (click)="resetWorkspace()" [disabled]="resetUnavailable()">{{ resetLoading() ? '正在清空…' : '确认清空全部业务数据' }}</button></div>
+  </footer>
 </dialog>

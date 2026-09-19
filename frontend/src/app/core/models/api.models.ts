@@ -9,6 +9,13 @@ export interface Patient {
   created_at: string;
 }
 
+/** 清空的是共享诊所业务数据；账号保留，数量用于显示本次操作结果。 */
+export interface WorkspaceResetResponse {
+  status: 'cleared';
+  deleted_counts: Partial<Record<string, number>>;
+  embedding_dim: number;
+}
+
 export interface ClinicalCase {
   id: string;
   patient_id: string;

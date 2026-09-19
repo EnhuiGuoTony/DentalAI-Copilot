@@ -55,3 +55,59 @@ MOCK_LLM=false
 
 `OPENROUTER_API_KEY` is ignored by Git; never put it in frontend code. Restart
 the backend after changing this file, then use **Connect model** in the web UI.
+
+## Semantic retrieval setup
+
+To start over, open **数据导入 → 清空业务数据** and confirm the scope. This clears
+all clinic business data and all members' conversations/checkpoints, while preserving
+accounts, login sessions, backend configuration and the source DOX database. Active
+imports/Agents block reset until they finish. The empty vector tables are prepared
+for the configured embedding dimension, so a successful reset replaces the need
+to migrate old vectors. This action cannot be undone.
+
+RAG now uses LangChain's `RecursiveCharacterTextSplitter` and `OpenAIEmbeddings`
+with the OpenRouter model `liquid/lfm-2.5-embedding-350m:free`, returning 1024-dimensional
+float vectors. SQLAlchemy/pgvector still own storage, patient filtering and transactions.
+Set `OPENROUTER_API_KEY` (or a separate `EMBEDDING_API_KEY`) in `backend/.env`:
+
+```env
+EMBEDDING_PROVIDER=openrouter
+EMBEDDING_MODEL=liquid/lfm-2.5-embedding-350m:free
+EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+EMBEDDING_DIM=1024
+RAG_CHUNK_SIZE=480
+RAG_CHUNK_OVERLAP=72
+```
+
+**Existing installations:** stop API writes, update the configuration, install the
+requirements, then preview and explicitly rebuild the index before restarting the API:
+
+```powershell
+cd backend
+.venv/Scripts/python.exe -m app.maintenance.rebuild_embeddings
+.venv/Scripts/python.exe -m app.maintenance.rebuild_embeddings --apply
+```
+
+The preview only prints counts. `--apply` sends existing indexed text and clinical notes
+to the configured embedding provider, then atomically replaces the two vector indexes
+and their column dimensions. Patient records remain intact. Do not use real patient
+data with this free endpoint: [its model page](https://openrouter.ai/liquid/lfm-2.5-embedding-350m:free)
+states that requests and embeddings may be retained for model training.
+
+For Docker, stop the API first and run the same commands with
+`docker-compose run --rm --no-deps api python -m app.maintenance.rebuild_embeddings`
+(append `--apply` for the actual rebuild), after `docker-compose build api`.
+Restart with `docker-compose up -d api`. Do not delete the PostgreSQL volume.
+
+`MOCK_LLM` only controls chat. For completely offline teaching set
+`EMBEDDING_PROVIDER=hash` and `MOCK_LLM=true`; changing vector mode requires a rebuild.
+There is no silent fallback to hash if a real model request fails.
+
+Run the synthetic comparison, which never reads patient data:
+
+```powershell
+cd backend
+.venv/Scripts/python.exe -m app.maintenance.evaluate_embeddings --live
+```
+
+See [RAG implementation and migration](docs/rag.md) for the call chain, limits and tests.

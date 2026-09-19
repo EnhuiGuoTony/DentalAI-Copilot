@@ -42,7 +42,8 @@ class RagService:
             answer=answer,
             evidence=evidence,
             limitations=[
-                "RAG evidence is limited to the demo patient's indexed notes.",
+                "Evidence comes from the selected patient's indexed notes and shared dental knowledge.",
+                "This endpoint returns a template summary; the conversation Agent can synthesize retrieved evidence with a chat model.",
                 "AI output is for clinician review and is not a definitive diagnosis.",
             ],
         )

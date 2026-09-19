@@ -1,13 +1,17 @@
 from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import cases, chat, dox_import, patients, rag
-from app.api import auth, appointments, conversations
+from app.api import auth, appointments, conversations, workspace
 from app.services.auth_service import current_user
 from app.services.agent_memory import setup_memory
 from app.core.config import get_settings
 from app.db.init_db import init_db
+from app.services.embedding_service import EmbeddingError
+from app.services.embedding_index import EmbeddingIndexError
+from app.services.workspace_lock import workspace_available
 
 settings = get_settings()
 
@@ -20,6 +24,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+
+@app.exception_handler(EmbeddingError)
+async def embedding_error_handler(request, exc: EmbeddingError):
+    """模型服务失败返回 503，索引需迁移返回 409；不泄露上游错误正文或患者输入。"""
+    return JSONResponse(status_code=409 if isinstance(exc, EmbeddingIndexError) else 503,
+                        content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,7 +50,9 @@ def health():
 app.include_router(auth.router, prefix="/api")
 for router in (patients.router, cases.router, rag.router, chat.router, dox_import.router,
                appointments.router, conversations.router):
-    app.include_router(router, prefix="/api", dependencies=[Depends(current_user)])
+    app.include_router(router, prefix="/api", dependencies=[Depends(current_user), Depends(workspace_available)])
+# 清空路由自己取得独占维护锁，不能先挂共享锁，否则会锁住自己。
+app.include_router(workspace.router, prefix="/api", dependencies=[Depends(current_user)])
 
 if __name__ == "__main__":
     import uvicorn

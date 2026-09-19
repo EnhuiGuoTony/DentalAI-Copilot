@@ -88,6 +88,8 @@ try {
     { name: 'change_records', description: 'Add a synthetic note.', arguments: { operation: 'add_note', patient_id: 'demo-patient', content: 'Synthetic note only' } }
   ] };
   const submissions = [];
+  const resetSubmissions = [];
+  let rejectReset = true;
   let authenticated = true;
   let rejectResume = false;
   const longAnswer = {
@@ -100,6 +102,12 @@ try {
     let body = {}; let status = 200; let type = 'application/json';
     if (request.method === 'OPTIONS') status = 204;
     else if (path.endsWith('/auth/me')) { body = { id: 'demo-user', username: 'demo', display_name: 'Demo User' }; if (!authenticated) status = 401; }
+    else if (path.endsWith('/workspace/reset')) {
+      resetSubmissions.push(JSON.parse(request.postData));
+      await delay(150);
+      if (rejectReset) { status = 409; body = { detail: 'Workspace is busy' }; }
+      else body = { status: 'cleared', deleted_counts: { patients: 1, clinical_notes: 2, conversations: 1 }, embedding_dim: 1024 };
+    }
     else if (path.endsWith('/patients')) body = [{ id: 'demo-patient', name: 'Demo Patient', date_of_birth: '1990-01-01', patient_number: 'DEMO-001', medical_record_number: 'MR-DEMO', dox_patient_id: null }];
     else if (path.endsWith('/appointments')) body = [];
     else if (path.endsWith('/chat/connect')) body = { connected: true, mock: true, provider: 'mock' };
@@ -191,6 +199,32 @@ try {
   await screenshot('approval-mobile');
   await click('.modal-heading button');
   await screenshot('workbench-mobile');
+  // 清空接口全部拦截：取消不发送请求，忙时保留数据，成功后清空全部页面状态。
+  await click('nav button:nth-child(3)');
+  await click('.open-reset');
+  await until(`document.querySelector('.reset-dialog').open`);
+  assert.equal(await evaluate(`document.querySelector('.reset-dialog').matches(':modal')`), true);
+  await screenshot('reset-confirm-mobile');
+  await click('.cancel-reset');
+  assert.equal(resetSubmissions.length, 0);
+  await click('.open-reset');
+  await until(`document.querySelector('.reset-dialog').open`);
+  await click('.confirm-reset');
+  await until(`document.querySelector('.confirm-reset').disabled`);
+  await click('.confirm-reset');
+  await until(`document.querySelector('.reset-error')?.textContent.includes('工作区正在')`);
+  assert.equal(resetSubmissions.length, 1, 'Busy reset must not be submitted twice');
+  assert.equal(await evaluate(`document.querySelectorAll('.patient').length`), 1);
+  rejectReset = false;
+  await click('.confirm-reset');
+  await until(`!document.querySelector('.reset-dialog').open`);
+  assert.deepEqual(resetSubmissions[1], { confirmation: 'CLEAR_CLINIC_DATA' });
+  assert.equal(await evaluate(`document.querySelectorAll('.patient').length`), 0);
+  assert.equal(await evaluate(`document.querySelector('.review-banner') === null`), true);
+  assert.equal(await evaluate(`document.querySelector('.auth-card') === null`), true);
+  assert.equal(await evaluate(`document.querySelector('.reset-success').textContent.includes('清空完成')`), true);
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+  await screenshot('reset-success-mobile');
   authenticated = false;
   await call('Page.reload'); await until(`document.querySelector('.auth-card') !== null`);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
@@ -198,7 +232,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await screenshot('login-desktop');
   assert.deepEqual(errors, []);
-  console.log('PASS: SSE approval/error, restore, mixed decisions, long answers/limitations, responsive layouts and login.');
+  console.log('PASS: SSE approval/error, restore, mixed decisions, long answers, reset cancel/busy/success, responsive layouts and login.');
   console.log(`Screenshots: ${output}`);
   await call('Browser.close');
 } finally {

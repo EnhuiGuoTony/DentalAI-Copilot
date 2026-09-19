@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { finalize, firstValueFrom } from 'rxjs';
 import { DentalAiApiService } from '../../core/api/dentalai-api.service';
 import { ChatMessage, DoxImportSummary, DoxPreviewResponse, Patient } from '../../core/models/api.models';
-import { Appointment, AppointmentInput, Conversation, PendingReview, AgentEvent, AgentAnswer } from '../../core/models/api.models';
+import { Appointment, AppointmentInput, Conversation, PendingReview, AgentEvent, AgentAnswer, WorkspaceResetResponse } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-workbench',
@@ -56,6 +56,20 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
   readonly importResult = signal<DoxImportSummary | null>(null);
   readonly importError = signal('');
   readonly importPatientLimit = signal(10);
+  readonly resetVisible = signal(false);
+  readonly resetLoading = signal(false);
+  readonly resetError = signal('');
+  readonly resetResult = signal<WorkspaceResetResponse | null>(null);
+  readonly resetUnavailable = computed(() => this.resetLoading() || this.loading() || this.importLoading() || this.appointmentBusy());
+  private readonly resetDialog = viewChild<ElementRef<HTMLDialogElement>>('resetDialog');
+  private readonly syncResetDialog = effect(() => {
+    const dialog = this.resetDialog()?.nativeElement;
+    if (!dialog) return;
+    if (this.resetVisible()) { if (!dialog.open) dialog.showModal(); }
+    else if (dialog.open) dialog.close();
+  });
+  // 清空成功后递增，忽略清空前发出的列表请求，防止慢响应把已删内容填回页面。
+  private dataGeneration = 0;
   readonly selectedPatientIds = signal<string[]>([]);
   readonly appointments = signal<Appointment[]>([]);
   readonly conversations = signal<Conversation[]>([]);
@@ -85,7 +99,11 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void { this.streamController?.abort(); }
 
   loadAppointments(): void {
-    this.api.appointments().subscribe({ next: items => this.appointments.set(items), error: () => this.appointmentError.set('无法读取预约。') });
+    const generation = this.dataGeneration;
+    this.api.appointments().subscribe({
+      next: items => { if (generation === this.dataGeneration) this.appointments.set(items); },
+      error: () => { if (generation === this.dataGeneration) this.appointmentError.set('无法读取预约。'); }
+    });
   }
   patientName(id: string): string { return this.patients().find(p => p.id === id)?.name ?? id; }
   appointmentLabel(status: Appointment['status']): string {
@@ -123,7 +141,11 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
     });
   }
   loadConversations(): void {
-    this.api.conversations().subscribe({ next: items => this.conversations.set(items), error: () => this.agentError.set('无法读取历史会话。') });
+    const generation = this.dataGeneration;
+    this.api.conversations().subscribe({
+      next: items => { if (generation === this.dataGeneration) this.conversations.set(items); },
+      error: () => { if (generation === this.dataGeneration) this.agentError.set('无法读取历史会话。'); }
+    });
   }
   openConversation(id: string): void {
     if (this.loading()) return;
@@ -172,13 +194,14 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
 
   loadPatients(): void {
     if (this.patientsLoading()) return;
+    const generation = this.dataGeneration;
     this.patientsLoading.set(true);
     this.patientsError.set('');
     this.api.patients()
       .pipe(finalize(() => this.patientsLoading.set(false)))
       .subscribe({
-        next: patients => this.patients.set(patients),
-        error: () => this.patientsError.set('无法读取患者信息，请确认后端已启动。')
+        next: patients => { if (generation === this.dataGeneration) this.patients.set(patients); },
+        error: () => { if (generation === this.dataGeneration) this.patientsError.set('无法读取患者信息，请确认后端已启动。'); }
       });
   }
 
@@ -215,6 +238,41 @@ export class WorkbenchComponent implements OnInit, OnDestroy {
         },
         error: () => this.importError.set('导入失败，请查看后端日志或先执行预览。')
       });
+  }
+
+  /** 展示共享诊所删除范围；打开或取消弹窗都不会调用清空 API。 */
+  openReset(): void {
+    if (this.resetUnavailable()) return;
+    this.resetError.set('');
+    this.resetVisible.set(true);
+  }
+
+  dismissReset(event?: Event): void {
+    event?.preventDefault();
+    if (!this.resetLoading()) this.resetVisible.set(false);
+  }
+
+  /** 仅用户确认后执行；成功才清掉本地缓存，失败保留原页面供核对。 */
+  resetWorkspace(): void {
+    if (!this.resetVisible() || this.resetUnavailable()) return;
+    this.resetLoading.set(true);
+    this.resetError.set('');
+    this.resetResult.set(null);
+    this.api.resetWorkspace().pipe(finalize(() => this.resetLoading.set(false))).subscribe({
+      next: result => {
+        this.dataGeneration++;
+        this.patients.set([]); this.appointments.set([]); this.conversations.set([]);
+        this.selectedPatientIds.set([]); this.patientSearch.set(''); this.input.set('');
+        this.clear(); this.resetAppointment();
+        this.importResult.set(null); this.importError.set(''); this.doxPreview.set(null);
+        this.patientsError.set(''); this.appointmentError.set('');
+        this.status.set('业务数据已清空，可以重新导入资料');
+        this.resetResult.set(result); this.resetVisible.set(false);
+      },
+      error: error => this.resetError.set(error.status === 409
+        ? '工作区正在导入、执行 Agent 或维护，请等待任务结束后重试。'
+        : '清空请求未成功确认，请刷新页面核对数据后重试。')
+    });
   }
 
   age(patient: Patient): string {

@@ -5,7 +5,6 @@ from sqlalchemy import select
 from app.db.init_db import init_db
 from app.db.models import ClinicalCase, ClinicalNote, Patient
 from app.db.session import SessionLocal
-from app.services.chunking import chunk_text
 from app.services.vector_store import VectorStore
 
 
@@ -55,14 +54,8 @@ def seed() -> None:
 
         store = VectorStore(db)
         for note in notes:
-            for idx, chunk in enumerate(chunk_text(note.content)):
-                store.add_chunk(
-                    patient_id=patient.id,
-                    source_type="clinical_note",
-                    source_id=note.id,
-                    text=chunk,
-                    metadata={"note_type": note.note_type, "chunk_index": idx},
-                )
+            store.add_document(patient.id, "clinical_note", note.id, note.content,
+                               {"note_type": note.note_type})
 
         db.commit()
         print(patient.id)

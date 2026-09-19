@@ -11,7 +11,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from app.db.models import Patient, Appointment, ClinicalNote, EmbeddingChunk, ClinicalFact, AgentRun, ClinicalCase
 from app.schemas.operations import Change, MutationResult
-from app.services.chunking import chunk_text
 from app.services.vector_store import VectorStore
 
 
@@ -72,9 +71,9 @@ def apply_change(db: Session, change: Change, allowed_ids: list[UUID] | None = N
             record = ClinicalNote(patient_id=patient.id, note_type=change.note_type, content=change.content)
             db.add(record)
             db.flush()
-            for index, text in enumerate(chunk_text(change.content)):
-                VectorStore(db).add_chunk(patient.id, "clinical_note", record.id, text,
-                                          {"note_type": change.note_type, "chunk_index": index})
+            # 一次批量编码本笔记的所有切片，与笔记和 MutationReceipt 保持同一事务。
+            VectorStore(db).add_document(patient.id, "clinical_note", record.id, change.content,
+                                         {"note_type": change.note_type})
         elif op == "delete_note":
             record = db.get(ClinicalNote, change.note_id)
             if record is None or record.patient_id != patient.id:

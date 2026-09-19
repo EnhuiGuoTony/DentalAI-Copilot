@@ -1,5 +1,8 @@
 # Architecture: implemented workflow
 
+The implemented semantic retrieval pipeline, Liquid embedding configuration and
+transactional index migration are documented in [RAG implementation](rag.md).
+
 ```mermaid
 flowchart TD
   UI[Angular authenticated workbench] --> Auth[FastAPI session and ownership checks]

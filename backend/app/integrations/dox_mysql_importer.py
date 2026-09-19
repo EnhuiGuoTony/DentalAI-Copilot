@@ -7,7 +7,7 @@ from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, delete
 from sqlalchemy.engine import make_url
 from sqlalchemy.engine import Engine, RowMapping
 from sqlalchemy.exc import SQLAlchemyError
@@ -18,6 +18,7 @@ from app.db.models import ClinicalFact, ClinicalNote, DoxImportRun, EmbeddingChu
 from app.schemas.dox_import import DoxImportRequest, DoxImportSummary, DoxPreviewResponse
 from app.services.chunking import chunk_text
 from app.services.embedding_service import EmbeddingService
+from app.services.embedding_index import check_index, index_metadata
 
 
 DOX_NAMESPACE = uuid.UUID("b9a650f0-c2e8-4ac8-b3af-9a913d3d8ed5")
@@ -174,6 +175,7 @@ class DoxMySqlImporter:
 
         summary = DoxImportSummary(run_id=str(run.id), status="running", started_at=run.started_at)
         try:
+            check_index(self.target_db, self.embedding_service)
             engine = self._source_engine()
             patient_ids = req.patient_ids or self._load_patient_ids(engine, req.patient_limit or self.settings.dox_import_patient_limit)
             summary.patients_requested = len(patient_ids)
@@ -422,7 +424,13 @@ class DoxMySqlImporter:
             # 共享知识保留字段名称以提供上下文，再按块编码；它不绑定具体患者。
             # 稳定 UUID 使相同来源与块序号在重复导入时定位到相同记录。
             source_id = stable_dox_uuid(table_name, source_pk)
-            for idx, chunk in enumerate(chunk_text(text_value)):
+            check_index(self.target_db, self.embedding_service)
+            chunks = chunk_text(text_value)
+            vectors = self.embedding_service.embed_documents(chunks)
+            # 编码成功后替换该来源的全部旧块，原文缩短也不会留下多余历史片段。
+            self.target_db.execute(delete(KnowledgeChunk).where(
+                KnowledgeChunk.source_type == source_type, KnowledgeChunk.source_id == source_id))
+            for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
                 chunk_id = stable_dox_uuid(f"KnowledgeChunk:{table_name}", source_pk, idx)
                 self.target_db.merge(
                     KnowledgeChunk(
@@ -430,13 +438,13 @@ class DoxMySqlImporter:
                         source_type=source_type,
                         source_id=source_id,
                         chunk_text=chunk,
-                        meta={
+                        meta=index_metadata(self.embedding_service, {
                             "source_system": "dox",
                             "source_table": table_name,
                             "source_pk": str(source_pk),
                             "chunk_index": idx,
-                        },
-                        embedding=self.embedding_service.embed(chunk),
+                        }),
+                        embedding=vector,
                     )
                 )
                 imported += 1
@@ -553,11 +561,16 @@ class DoxMySqlImporter:
     ) -> None:
         """按来源和分块序号更新患者向量块，保留患者范围与来源元数据。
 
-        merge 按稳定主键插入或更新，与 VectorStore.add_chunk 的新增方式不同。
-        此处不删除旧块；原文缩短、分块数减少后，多余的历史块不会自动清理。
-        写入仍在调用者的事务里，由外层方法提交。
+        先完成批量编码，再删除同患者、同来源的旧块并写入新块，避免缩短后残留。
+        删除和插入仍在调用者的事务里；失败回滚后旧索引保持不变。
         """
-        for idx, chunk in enumerate(chunk_text(text_value)):
+        check_index(self.target_db, self.embedding_service)
+        chunks = chunk_text(text_value)
+        vectors = self.embedding_service.embed_documents(chunks)
+        self.target_db.execute(delete(EmbeddingChunk).where(
+            EmbeddingChunk.patient_id == patient_id, EmbeddingChunk.source_type == source_type,
+            EmbeddingChunk.source_id == source_id))
+        for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
             self.target_db.merge(
                 EmbeddingChunk(
                     id=stable_dox_uuid(f"EmbeddingChunk:{source_type}", source_id, idx),
@@ -565,8 +578,8 @@ class DoxMySqlImporter:
                     source_type=source_type,
                     source_id=source_id,
                     chunk_text=chunk,
-                    meta={**metadata, "chunk_index": idx},
-                    embedding=self.embedding_service.embed(chunk),
+                    meta=index_metadata(self.embedding_service, {**metadata, "chunk_index": idx}),
+                    embedding=vector,
                 )
             )
 

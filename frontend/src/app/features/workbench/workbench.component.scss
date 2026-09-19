@@ -734,6 +734,21 @@ h3 {
   color: #7f887d;
 }
 // 弹窗保留完整参数与独立滚动空间，底部按钮可见；backdrop 隔离背景操作。
+.reset-card {
+  margin-top: 24px;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  border-color: #e3c5bf;
+}
+.reset-card > div { flex: 1 1 260px; min-width: 0; }
+.reset-card h2 { font-size: 19px; }
+.danger-button { color: #fff; background: #9b3430; border-color: #9b3430; }
+.danger-button:hover:not(:disabled) { background: #7f2825; }
+.reset-success { color: #287049; font-size: 13px; line-height: 1.7; }
 .approval-dialog {
   width: min(680px, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);

@@ -9,7 +9,6 @@ from app.schemas.operations import UpdatePatient, DeletePatient, AddNote, Delete
 from app.services.records_service import apply_change, patient_lock, patient_version, version
 from app.db.session import get_db
 from app.schemas.patient import ClinicalNoteCreate, ClinicalNoteRead, PatientCreate, PatientRead, TimelineItem
-from app.services.chunking import chunk_text
 from app.services.vector_store import VectorStore
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -58,16 +57,8 @@ def ingest_notes(patient_id: UUID, db: Session = Depends(get_db)):
     store = VectorStore(db)
     created = 0
     for note in notes:
-        for idx, chunk in enumerate(chunk_text(note.content)):
-            store.add_chunk(
-                patient_id=patient_id,
-                source_type="clinical_note",
-                source_id=note.id,
-                text=chunk,
-                # 一个 source_id 对应多块，chunk_index 标记块在原笔记中的顺序。
-                metadata={"note_type": note.note_type, "chunk_index": idx},
-            )
-            created += 1
+        created += len(store.add_document(patient_id, "clinical_note", note.id, note.content,
+                                          {"note_type": note.note_type}))
     db.commit()
     return {"patient_id": patient_id, "chunks_created": created}
 

@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ChatConnectionResponse, DoxImportRequest, DoxImportSummary, DoxPreviewResponse, Patient, TimelineItem } from '../models/api.models';
-import { UserProfile, Appointment, AppointmentInput, Conversation, ConversationState, AgentEvent } from '../models/api.models';
+import { UserProfile, Appointment, AppointmentInput, Conversation, ConversationState, AgentEvent, WorkspaceResetResponse } from '../models/api.models';
 import { SessionState } from './session-state.service';
 
 @Injectable({ providedIn: 'root' })
@@ -26,6 +26,10 @@ export class DentalAiApiService {
     return this.http.post<void>(`${this.baseUrl}/auth/password`, { current_password, new_password });
   }
   logout(): Observable<void> { return this.http.post<void>(`${this.baseUrl}/auth/logout`, {}); }
+  /** 用户确认清空后才调用；固定确认字段不允许浏览器提交任意表名或 SQL。 */
+  resetWorkspace(): Observable<WorkspaceResetResponse> {
+    return this.http.post<WorkspaceResetResponse>(`${this.baseUrl}/workspace/reset`, { confirmation: 'CLEAR_CLINIC_DATA' });
+  }
   appointments(): Observable<Appointment[]> { return this.http.get<Appointment[]>(`${this.baseUrl}/appointments`); }
   saveAppointment(input: AppointmentInput, existing?: Appointment): Observable<unknown> {
     if (!existing) return this.http.post(`${this.baseUrl}/appointments`, input);

@@ -44,6 +44,8 @@ def workspace(monkeypatch):
         checkpoint_test_url = test_url.update_query_dict({"options": f"-csearch_path={schema}"})
         monkeypatch.setattr(get_settings(), "database_url", checkpoint_test_url.render_as_string(hide_password=False))
         monkeypatch.setattr(get_settings(), "mock_llm", True)
+        # 集成测试只使用明确的离线向量模式，不把测试资料发送给外部提供方。
+        monkeypatch.setattr(get_settings(), "embedding_provider", "hash")
         monkeypatch.setattr(pms_agent_service, "SessionLocal", factory)
         monkeypatch.setattr(conversation_service, "SessionLocal", factory)
         monkeypatch.setattr(conversation_service, "engine", engine)

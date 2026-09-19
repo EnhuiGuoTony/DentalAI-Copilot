@@ -21,6 +21,7 @@ from app.schemas.operations import AgentAnswer
 from app.services.agent_memory import memory
 from app.services.pms_agent_service import PatientAliases, PmsAgentService
 from app.services.structured_output_middleware import needs_finalization
+from app.services.workspace_lock import workspace_lock
 
 
 class DemoModel(BaseChatModel):
@@ -52,7 +53,8 @@ def conversation_lock(conversation_id: UUID):
     key = int.from_bytes(conversation_id.bytes[:8], "big", signed=True)
     # advisory lock 属于连接，无需持有数据库事务。长时间的模型调用若保留事务快照，
     # 会阻塞 CREATE INDEX CONCURRENTLY 等维护操作，甚至使 checkpoint 初始化一直等待。
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+    # FastAPI 的请求依赖可能在 SSE 迭代前释放；这里的共享锁覆盖模型、工具和 checkpoint。
+    with workspace_lock(engine), engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         locked = connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
         if not locked:
             raise HTTPException(409, "This conversation is already running")
